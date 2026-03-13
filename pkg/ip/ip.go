@@ -11,7 +11,8 @@ const (
 	ProtocolTCP  uint8 = 6
 	ProtocolUDP  uint8 = 17
 
-	minHeaderLen = 20
+	minHeaderLen  = 20
+	maxOptionsLen = 40
 )
 
 type Packet struct {
@@ -87,13 +88,27 @@ func Parse(raw []byte) (*Packet, error) {
 }
 
 func (p *Packet) Marshal() ([]byte, error) {
-	ihl := uint8(minHeaderLen+len(p.Options)) / 4
 	if len(p.Options)%4 != 0 {
 		return nil, errors.New("ip: options length must be a multiple of 4")
 	}
+	if len(p.Options) > maxOptionsLen {
+		return nil, errors.New("ip: options length exceeds IPv4 header limit")
+	}
+	src4 := p.SrcIP.To4()
+	if src4 == nil {
+		return nil, errors.New("ip: source address must be IPv4")
+	}
+	dst4 := p.DstIP.To4()
+	if dst4 == nil {
+		return nil, errors.New("ip: destination address must be IPv4")
+	}
+	ihl := uint8((minHeaderLen + len(p.Options)) / 4)
 
 	headerLen := int(ihl) * 4
 	totalLen := headerLen + len(p.Payload)
+	if totalLen > 0xffff {
+		return nil, errors.New("ip: packet exceeds IPv4 maximum length")
+	}
 	buf := make([]byte, totalLen)
 
 	buf[0] = (4 << 4) | ihl
@@ -106,8 +121,8 @@ func (p *Packet) Marshal() ([]byte, error) {
 
 	buf[8] = p.TTL
 	buf[9] = p.Protocol
-	copy(buf[12:16], p.SrcIP.To4())
-	copy(buf[16:20], p.DstIP.To4())
+	copy(buf[12:16], src4)
+	copy(buf[16:20], dst4)
 
 	if len(p.Options) > 0 {
 		copy(buf[minHeaderLen:], p.Options)

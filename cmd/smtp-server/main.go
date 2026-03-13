@@ -23,17 +23,25 @@ func (h *maildirHandler) HandleMessage(from string, to []string, data []byte) er
 		host = "localhost"
 	}
 	var rnd [8]byte
-	rand.Read(rnd[:])
+	if _, err := rand.Read(rnd[:]); err != nil {
+		return fmt.Errorf("generate random: %w", err)
+	}
 	name := fmt.Sprintf("%d.%x.%s", ts, rnd, host)
 
+	tmpDir := filepath.Join(h.dir, "tmp")
 	newDir := filepath.Join(h.dir, "new")
-	path := filepath.Join(newDir, name)
+	tmpPath := filepath.Join(tmpDir, name)
+	newPath := filepath.Join(newDir, name)
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return fmt.Errorf("write maildir: %w", err)
 	}
+	if err := os.Rename(tmpPath, newPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("publish maildir message: %w", err)
+	}
 
-	log.Printf("smtp-server: stored message from <%s> to %v -> %s", from, to, path)
+	log.Printf("smtp-server: stored message from <%s> to %v -> %s", from, to, newPath)
 	return nil
 }
 

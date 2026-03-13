@@ -1,6 +1,8 @@
 # Contributing to lex-internet
 
-Keep changes small and easy to review. This project tries to stay portable and dependency-light, so focused pull requests land faster than broad rewrites.
+Thanks for taking a look at the project.
+
+Small changes are much easier to review than broad rewrites. The codebase tries to stay portable and dependency-light, so if you want to make a bigger change, open an issue first and talk through the shape of it.
 
 ## Good Places To Start
 
@@ -12,13 +14,13 @@ Keep changes small and easy to review. This project tries to stay portable and d
 
 ## Development Setup
 
-Requirements:
+You will need:
 
 - Go 1.22+
 - `make`
 - A C toolchain for `c/`
 
-Recommended validation loop:
+This is the normal validation loop:
 
 ```bash
 make fmt
@@ -61,4 +63,4 @@ In the PR description, say:
 - How it was validated
 - Any known limitations or follow-up work
 
-If the scope is unclear, open an issue first and keep the proposal narrow.
+If the scope is fuzzy, open an issue first. That usually saves time on both sides.

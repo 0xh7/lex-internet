@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Keep the proposal narrow. Say what should change and how we would know it works.
+        Keep the proposal focused. Say what should change and how we would tell that it worked.
   - type: textarea
     id: problem
     attributes:

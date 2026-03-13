@@ -1,22 +1,22 @@
 # Security Policy
 
-Handle security reports privately until there is a fix or a documented mitigation.
+If you find a security issue, please keep it private until there is a fix or at least a clear mitigation.
 
 ## Supported Versions
 
-Right now, security fixes are only guaranteed for the current default branch.
+Security fixes are only guaranteed for the current default branch.
 
 ## Reporting a Vulnerability
 
 Please do not open a public issue with exploit details.
 
-Preferred process:
+Best path:
 
 1. Use GitHub private vulnerability reporting or a repository security advisory if it is enabled.
 2. If private reporting is not configured yet, contact the maintainers through a private channel.
 3. If no private channel is available, open a minimal public issue asking for a secure contact path and do not include reproduction details.
 
-Useful details:
+What helps:
 
 - Affected package, command, or file
 - Impact and attack preconditions
@@ -34,4 +34,4 @@ Best effort:
 
 ## Safe Testing
 
-Only test against systems you own or are allowed to assess. Do not exfiltrate data, degrade public services, or publish exploit details before maintainers have had a fair chance to respond.
+Only test against systems you own or are explicitly allowed to assess. Do not pull data you should not have, break public services, or publish exploit details before maintainers have had a fair chance to respond.

@@ -58,6 +58,11 @@ raw_socket_bind(raw_socket_t sock, const char *iface)
 {
 	struct sockaddr_in addr;
 
+	if (iface == NULL || *iface == '\0') {
+		errno = EINVAL;
+		return -1;
+	}
+
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 
@@ -120,6 +125,7 @@ raw_socket_close(raw_socket_t sock)
 
 #else
 
+#include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <netinet/in.h>
@@ -127,6 +133,10 @@ raw_socket_close(raw_socket_t sock)
 #include <net/if.h>
 #include <unistd.h>
 #include <limits.h>
+
+#ifndef SSIZE_MAX
+#define SSIZE_MAX ((ssize_t)(SIZE_MAX >> 1))
+#endif
 
 int
 raw_socket_init(void)

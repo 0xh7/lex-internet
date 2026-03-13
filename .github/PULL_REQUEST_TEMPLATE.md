@@ -1,6 +1,6 @@
 ## What changed
 
-- Short bullets are enough.
+- Short bullets are fine.
 
 ## How I checked it
 

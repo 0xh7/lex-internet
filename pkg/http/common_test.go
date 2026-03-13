@@ -40,3 +40,12 @@ func TestParseResponseConsumesChunkedTrailers(t *testing.T) {
 		t.Fatalf("second status = %d, want 204", second.StatusCode)
 	}
 }
+
+func TestCanonicalHeaderKeyUsesStandardForm(t *testing.T) {
+	if got := canonicalHeaderKey("www-authenticate"); got != "Www-Authenticate" {
+		t.Fatalf("canonicalHeaderKey = %q, want %q", got, "Www-Authenticate")
+	}
+	if got := canonicalHeaderKey("content-md5"); got != "Content-Md5" {
+		t.Fatalf("canonicalHeaderKey = %q, want %q", got, "Content-Md5")
+	}
+}

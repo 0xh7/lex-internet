@@ -273,13 +273,9 @@ func (c *Client) enterPassive() (net.Conn, error) {
 		values = append(values, n)
 	}
 
-	host := fmt.Sprintf("%d.%d.%d.%d", values[0], values[1], values[2], values[3])
 	port := values[4]*256 + values[5]
-	if host == "0.0.0.0" || host == "127.0.0.1" {
-		host = c.host
-	}
 
-	return net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 10*time.Second)
+	return net.DialTimeout("tcp", net.JoinHostPort(c.host, strconv.Itoa(port)), 10*time.Second)
 }
 
 func (c *Client) command(format string, args ...interface{}) (int, string, error) {

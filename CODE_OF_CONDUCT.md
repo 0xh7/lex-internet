@@ -1,6 +1,6 @@
 # Code of Conduct
 
-Keep discussion respectful, direct, and technical. Disagreement is fine. Personal attacks are not.
+Keep discussion respectful, direct, and technical. Disagreement is normal. Personal attacks are not.
 
 ## Expected Behavior
 
@@ -19,7 +19,7 @@ Keep discussion respectful, direct, and technical. Disagreement is fine. Persona
 
 ## Enforcement
 
-Maintainers may edit, hide, lock, or remove content that violates this code of conduct. They may also restrict participation for repeated or severe violations.
+Maintainers may edit, hide, lock, or remove content that breaks this code of conduct. Repeated or severe problems can lead to restricted participation.
 
 ## Reporting
 

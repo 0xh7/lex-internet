@@ -9,10 +9,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/0xh7/lex-internet/pkg/arp"
-	"github.com/0xh7/lex-internet/pkg/ethernet"
 )
 
 func main() {
@@ -102,6 +100,8 @@ func readARPEntry(ip net.IP) (string, error) {
 }
 
 func scanSubnet(cidr string, ifaceName string) {
+	const maxConcurrentProbes = 256
+
 	_, network, err := net.ParseCIDR(cidr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "arp-tool: invalid CIDR: %v\n", err)
@@ -114,53 +114,30 @@ func scanSubnet(cidr string, ifaceName string) {
 		os.Exit(1)
 	}
 
-	var srcMAC [6]byte
-	copy(srcMAC[:], iface.HardwareAddr)
-
 	fmt.Printf("Scanning %s via %s (%s)\n", cidr, iface.Name, srcIP)
 	fmt.Printf("%-18s  %s\n", "IP Address", "MAC Address")
 	fmt.Println(strings.Repeat("-", 40))
 
 	hosts := expandCIDR(network)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxConcurrentProbes)
 	for _, host := range hosts {
-		pkt, err := arp.NewRequest(srcMAC, srcIP, host)
-		if err != nil {
-			continue
-		}
-		raw, err := pkt.Marshal()
-		if err != nil {
-			continue
-		}
-		_ = ethernet.Frame{
-			Dst:       [6]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff},
-			Src:       srcMAC,
-			EtherType: ethernet.EtherTypeARP,
-			Payload:   raw,
-		}
-	}
-
-	for _, host := range hosts {
-		mac, err := readARPEntry(host)
-		if err == nil {
-			fmt.Printf("%-18s  %s\n", host, mac)
-		}
-	}
-
-	for _, host := range hosts {
+		wg.Add(1)
 		go func(ip net.IP) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			conn, err := net.DialTimeout("udp4", fmt.Sprintf("%s:1", ip), 100*time.Millisecond)
 			if err == nil {
-				conn.Write([]byte{0})
-				conn.Close()
+				_, _ = conn.Write([]byte{0})
+				_ = conn.Close()
 			}
 		}(host)
 	}
+	wg.Wait()
 
-	time.Sleep(2 * time.Second)
-
-	fmt.Println("\nResults after ARP resolution:")
-	fmt.Printf("%-18s  %s\n", "IP Address", "MAC Address")
-	fmt.Println(strings.Repeat("-", 40))
+	time.Sleep(1500 * time.Millisecond)
 	for _, host := range hosts {
 		mac, err := readARPEntry(host)
 		if err == nil {

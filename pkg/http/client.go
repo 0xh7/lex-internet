@@ -77,8 +77,7 @@ func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
 
 	conn.SetDeadline(time.Now().Add(c.Timeout))
 
-	_, err = conn.Write(req.Marshal())
-	if err != nil {
+	if err := writeConnFull(conn, req.Marshal()); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("http: write request: %w", err)
 	}
@@ -90,8 +89,7 @@ func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
 		return nil, fmt.Errorf("http: read response: %w", err)
 	}
 
-	connHeader := strings.ToLower(resp.Header("Connection"))
-	if connHeader != "close" && reader.Buffered() == 0 {
+	if shouldReuseConnection(resp, reader) {
 		c.putConn(host, conn)
 	} else {
 		conn.Close()
@@ -221,4 +219,35 @@ func buildRedirect(orig *Request, location string) (*Request, error) {
 		return nil, err
 	}
 	return req, nil
+}
+
+func shouldReuseConnection(resp *Response, reader *bufio.Reader) bool {
+	if reader.Buffered() != 0 {
+		return false
+	}
+	if strings.EqualFold(resp.Header("Connection"), "close") {
+		return false
+	}
+	if hasBodylessStatus(resp.StatusCode) {
+		return true
+	}
+	if resp.Header("Content-Length") != "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(resp.Header("Transfer-Encoding")), "chunked")
+}
+
+func hasBodylessStatus(code int) bool {
+	return (code >= 100 && code < 200) || code == 204 || code == 304
+}
+
+func writeConnFull(conn net.Conn, data []byte) error {
+	for len(data) > 0 {
+		n, err := conn.Write(data)
+		if err != nil {
+			return err
+		}
+		data = data[n:]
+	}
+	return nil
 }

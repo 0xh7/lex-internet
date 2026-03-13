@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/textproto"
 	"strconv"
 	"strings"
 )
@@ -143,17 +144,7 @@ func readChunked(reader *bufio.Reader) ([]byte, error) {
 }
 
 func canonicalHeaderKey(s string) string {
-	upper := true
-	b := []byte(s)
-	for i, c := range b {
-		if upper && c >= 'a' && c <= 'z' {
-			b[i] = c - 0x20
-		} else if !upper && c >= 'A' && c <= 'Z' {
-			b[i] = c + 0x20
-		}
-		upper = c == '-'
-	}
-	return string(b)
+	return textproto.CanonicalMIMEHeaderKey(s)
 }
 
 func headerGet(headers map[string][]string, key string) string {

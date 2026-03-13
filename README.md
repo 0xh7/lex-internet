@@ -1,6 +1,8 @@
 # lex-internet
 
-A networking playground in **Go** and **C**. The repository contains protocol packages, small servers and clients, and low-level packet code for experimenting with the stack from Ethernet up to application protocols.
+`lex-internet` is a networking lab in **Go** and **C**.
+
+The repo mixes protocol packages, small servers and clients, and lower-level packet code. Some parts are here because they are useful, some because they are good for learning, and some because rebuilding common network pieces is a good way to understand how they actually behave.
 
 ## Architecture
 
@@ -235,7 +237,7 @@ If you want to contribute, read these first:
 - Read `CODE_OF_CONDUCT.md` before opening issues or pull requests
 - Read `SECURITY.md` before reporting vulnerabilities
 
-Recommended contributor workflow:
+Typical workflow:
 
 ```bash
 make fmt
@@ -244,7 +246,7 @@ go vet ./...
 make verify
 ```
 
-High-value areas for contribution:
+Good areas to work on:
 
 - Add `*_test.go` coverage across `pkg/`
 - Expand protocol compliance and edge-case handling

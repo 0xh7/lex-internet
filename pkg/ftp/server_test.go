@@ -1,10 +1,14 @@
 package ftp
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestResolvePathKeepsAbsolutePathsInsideRoot(t *testing.T) {
+	root := t.TempDir()
 	sess := &session{
-		server: &Server{rootDir: "/var/ftp"},
+		server: &Server{rootDir: root},
 		cwd:    "/",
 	}
 
@@ -12,28 +16,31 @@ func TestResolvePathKeepsAbsolutePathsInsideRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolvePath(): %v", err)
 	}
-	if actual != "/var/ftp/etc/passwd" {
-		t.Fatalf("actual path = %q, want %q", actual, "/var/ftp/etc/passwd")
+	wantActual := filepath.Join(root, "etc", "passwd")
+	if actual != wantActual {
+		t.Fatalf("actual path = %q, want %q", actual, wantActual)
 	}
 	if virtual != "/etc/passwd" {
 		t.Fatalf("virtual path = %q, want %q", virtual, "/etc/passwd")
 	}
 }
 
-func TestResolvePathAllowsRootFilesystemWhenConfigured(t *testing.T) {
+func TestResolvePathUsesSessionCWD(t *testing.T) {
+	root := t.TempDir()
 	sess := &session{
-		server: &Server{rootDir: "/"},
-		cwd:    "/",
+		server: &Server{rootDir: root},
+		cwd:    "/pub",
 	}
 
 	actual, virtual, err := sess.resolvePath("etc/passwd")
 	if err != nil {
 		t.Fatalf("resolvePath(): %v", err)
 	}
-	if actual != "/etc/passwd" {
-		t.Fatalf("actual path = %q, want %q", actual, "/etc/passwd")
+	wantActual := filepath.Join(root, "pub", "etc", "passwd")
+	if actual != wantActual {
+		t.Fatalf("actual path = %q, want %q", actual, wantActual)
 	}
-	if virtual != "/etc/passwd" {
-		t.Fatalf("virtual path = %q, want %q", virtual, "/etc/passwd")
+	if virtual != "/pub/etc/passwd" {
+		t.Fatalf("virtual path = %q, want %q", virtual, "/pub/etc/passwd")
 	}
 }

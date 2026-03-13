@@ -92,7 +92,7 @@ func (e *Email) Marshal() []byte {
 	}
 
 	skip := map[string]bool{
-		"Message-Id": true, "Date": true, "From": true, "To": true, "Subject": true,
+		"Message-ID": true, "Date": true, "From": true, "To": true, "Subject": true,
 	}
 	for k, v := range e.Headers {
 		if skip[k] {

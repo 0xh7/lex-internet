@@ -1,3 +1,9 @@
+#ifndef _WIN32
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+#endif
+
 #include "arp.h"
 #include "../raw_socket/raw_socket.h"
 #include "../packet_parser/packet_parser.h"
@@ -26,6 +32,20 @@
 #define HW_ETHERNET	1
 
 static const uint8_t broadcast_mac[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+#ifndef _WIN32
+static void
+set_ifreq_name(struct ifreq *ifr, const char *name)
+{
+	size_t n;
+
+	memset(ifr->ifr_name, 0, sizeof(ifr->ifr_name));
+	n = strlen(name);
+	if (n >= sizeof(ifr->ifr_name))
+		n = sizeof(ifr->ifr_name) - 1;
+	memcpy(ifr->ifr_name, name, n);
+}
+#endif
 
 void
 arp_cache_init(struct arp_cache *cache)
@@ -167,6 +187,12 @@ arp_request(raw_socket_t sock, uint32_t target_ip, const uint8_t *src_mac,
 		tv.tv_sec = 1;
 		tv.tv_usec = 0;
 		FD_ZERO(&fds);
+#ifndef _WIN32
+		if (sock >= FD_SETSIZE) {
+			errno = EINVAL;
+			return -1;
+		}
+#endif
 		FD_SET(sock, &fds);
 
 		if (select(sock + 1, &fds, NULL, NULL, &tv) <= 0)
@@ -297,7 +323,7 @@ get_iface_mac(const char *iface, uint8_t *mac_out)
 				continue;
 
 			memset(&ifr, 0, sizeof(ifr));
-			strncpy(ifr.ifr_name, ifc.ifc_req[i].ifr_name, IFNAMSIZ - 1);
+			set_ifreq_name(&ifr, ifc.ifc_req[i].ifr_name);
 			if (ioctl(tmpsock, SIOCGIFHWADDR, &ifr) == 0) {
 				memcpy(mac_out, ifr.ifr_hwaddr.sa_data, 6);
 				close(tmpsock);
@@ -314,7 +340,7 @@ get_iface_mac(const char *iface, uint8_t *mac_out)
 		return -1;
 
 	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, iface, IFNAMSIZ - 1);
+	set_ifreq_name(&ifr, iface);
 	if (ioctl(tmpsock, SIOCGIFHWADDR, &ifr) < 0) {
 		close(tmpsock);
 		return -1;

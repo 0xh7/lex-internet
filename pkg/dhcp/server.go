@@ -294,7 +294,7 @@ func (s *Server) allocateIP(mac net.HardwareAddr) net.IP {
 			s.allocated[candidate.String()] = true
 			return lease.IP
 		}
-		if n == endN || n == 0xFFFFFFFF {
+		if n == endN {
 			break
 		}
 	}
