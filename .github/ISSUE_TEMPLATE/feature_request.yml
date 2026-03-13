@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a new protocol feature, tool improvement, or contributor workflow change
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the proposal narrow. Say what should change and how we would know it works.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What problem are you trying to solve?
+      placeholder: The current implementation is missing ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, API, or workflow you want.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Mention other approaches or why the current behavior is not enough.
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: How should this be tested or demonstrated?
+      placeholder: Unit tests, packet fixtures, CLI demo, benchmark, ...
+  - type: input
+    id: area
+    attributes:
+      label: Relevant area
+      placeholder: pkg/http, pkg/dns, cmd/proxy, docs, CI, ...

@@ -1,0 +1,224 @@
+package http
+
+import (
+	"bufio"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	defaultClientTimeout  = 30 * time.Second
+	defaultIdleTimeout    = 90 * time.Second
+	defaultMaxRedirects   = 10
+	maxConnectionsPerHost = 4
+)
+
+type Client struct {
+	Timeout         time.Duration
+	FollowRedirects bool
+	MaxRedirects    int
+	pool            connPool
+}
+
+type connPool struct {
+	mu          sync.Mutex
+	idle        map[string][]poolConn
+	idleTimeout time.Duration
+}
+
+type poolConn struct {
+	conn    net.Conn
+	created time.Time
+}
+
+func NewClient() *Client {
+	return &Client{
+		Timeout:         defaultClientTimeout,
+		FollowRedirects: true,
+		MaxRedirects:    defaultMaxRedirects,
+		pool: connPool{
+			idle:        make(map[string][]poolConn),
+			idleTimeout: defaultIdleTimeout,
+		},
+	}
+}
+
+func (c *Client) Do(req *Request) (*Response, error) {
+	return c.doFollow(req, 0)
+}
+
+func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
+	host := req.Host
+	if !strings.Contains(host, ":") {
+		host = host + ":80"
+	}
+
+	conn, err := c.getConn(host)
+	if err != nil {
+		return nil, fmt.Errorf("http: connect %s: %w", host, err)
+	}
+
+	if req.Header("Host") == "" {
+		req.SetHeader("Host", req.Host)
+	}
+	if req.Header("User-Agent") == "" {
+		req.SetHeader("User-Agent", "lex-internet/1.0")
+	}
+	if req.Header("Accept") == "" {
+		req.SetHeader("Accept", "*/*")
+	}
+	if req.Header("Connection") == "" {
+		req.SetHeader("Connection", "keep-alive")
+	}
+
+	conn.SetDeadline(time.Now().Add(c.Timeout))
+
+	_, err = conn.Write(req.Marshal())
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("http: write request: %w", err)
+	}
+
+	reader := bufio.NewReaderSize(conn, 4096)
+	resp, err := ParseResponse(reader)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("http: read response: %w", err)
+	}
+
+	connHeader := strings.ToLower(resp.Header("Connection"))
+	if connHeader != "close" && reader.Buffered() == 0 {
+		c.putConn(host, conn)
+	} else {
+		conn.Close()
+	}
+
+	if c.FollowRedirects && resp.IsRedirect() && redirects < c.MaxRedirects {
+		location := resp.Header("Location")
+		if location == "" {
+			return resp, nil
+		}
+
+		nextReq, err := buildRedirect(req, location)
+		if err != nil {
+			return resp, nil
+		}
+		return c.doFollow(nextReq, redirects+1)
+	}
+
+	return resp, nil
+}
+
+func (c *Client) Get(url string) (*Response, error) {
+	req, err := NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
+}
+
+func (c *Client) Post(url string, contentType string, body []byte) (*Response, error) {
+	req, err := NewRequest("POST", url, body)
+	if err != nil {
+		return nil, err
+	}
+	req.SetHeader("Content-Type", contentType)
+	req.SetHeader("Content-Length", strconv.Itoa(len(body)))
+	return c.Do(req)
+}
+
+func (c *Client) Put(url string, body []byte) (*Response, error) {
+	req, err := NewRequest("PUT", url, body)
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > 0 {
+		req.SetHeader("Content-Type", "application/octet-stream")
+	}
+	return c.Do(req)
+}
+
+func (c *Client) Delete(url string) (*Response, error) {
+	req, err := NewRequest("DELETE", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	return c.Do(req)
+}
+
+func (c *Client) getConn(host string) (net.Conn, error) {
+	c.pool.mu.Lock()
+	conns := c.pool.idle[host]
+	now := time.Now()
+
+	for len(conns) > 0 {
+		pc := conns[len(conns)-1]
+		conns = conns[:len(conns)-1]
+
+		if now.Sub(pc.created) < c.pool.idleTimeout {
+			c.pool.idle[host] = conns
+			c.pool.mu.Unlock()
+			return pc.conn, nil
+		}
+		pc.conn.Close()
+	}
+
+	delete(c.pool.idle, host)
+	c.pool.mu.Unlock()
+
+	return net.DialTimeout("tcp", host, c.Timeout)
+}
+
+func (c *Client) putConn(host string, conn net.Conn) {
+	c.pool.mu.Lock()
+	defer c.pool.mu.Unlock()
+
+	conns := c.pool.idle[host]
+	if len(conns) >= maxConnectionsPerHost {
+		conn.Close()
+		return
+	}
+	c.pool.idle[host] = append(conns, poolConn{
+		conn:    conn,
+		created: time.Now(),
+	})
+}
+
+func (c *Client) CloseIdleConnections() {
+	c.pool.mu.Lock()
+	defer c.pool.mu.Unlock()
+
+	for host, conns := range c.pool.idle {
+		for _, pc := range conns {
+			pc.conn.Close()
+		}
+		delete(c.pool.idle, host)
+	}
+}
+
+func buildRedirect(orig *Request, location string) (*Request, error) {
+	if strings.HasPrefix(location, "/") {
+		req, err := NewRequest("GET", "http://"+orig.Host+location, nil)
+		if err != nil {
+			return nil, err
+		}
+		for k, vals := range orig.Headers {
+			lower := strings.ToLower(k)
+			if lower == "content-type" || lower == "content-length" {
+				continue
+			}
+			req.Headers[k] = vals
+		}
+		return req, nil
+	}
+
+	req, err := NewRequest("GET", location, nil)
+	if err != nil {
+		return nil, err
+	}
+	return req, nil
+}

@@ -1,0 +1,33 @@
+# lex-internet firewall rules
+# Format: action direction protocol src_ip dst_ip [src_port dst_port]
+# action:    allow | deny | drop
+# direction: in | out | both
+# protocol:  tcp | udp | icmp | *
+# ip:        CIDR, single IP, or * (any)
+# port:      single port, range (80-443), or * (any)
+
+# Allow loopback
+allow both * 127.0.0.0/8 127.0.0.0/8 * *
+
+# Allow established outbound connections
+allow out tcp * * * *
+
+# Allow inbound HTTP/HTTPS
+allow in tcp * * * 80
+allow in tcp * * * 443
+
+# Allow inbound SSH
+allow in tcp * * * 22
+
+# Allow inbound DNS
+allow in udp * * * 53
+allow in tcp * * * 53
+
+# Allow ICMP (ping)
+allow both icmp * * * *
+
+# Allow DHCP
+allow in udp * * 67-68 67-68
+
+# Deny everything else
+deny in * * * * *

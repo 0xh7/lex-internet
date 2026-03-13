@@ -1,0 +1,107 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-go:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+            archive_name: lex-internet_linux_amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+            archive_name: lex-internet_windows_amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - name: Build binaries
+        run: make build GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }}
+      - name: Archive binaries (Linux)
+        if: runner.os == 'Linux'
+        run: tar -C bin/${{ matrix.goos }}-${{ matrix.goarch }} -czf ${{ matrix.archive_name }}.tar.gz .
+      - name: Archive binaries (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "bin/${{ matrix.goos }}-${{ matrix.goarch }}/*" -DestinationPath "${{ matrix.archive_name }}.zip"
+      - name: Upload Go archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive_name }}
+          path: |
+            ${{ matrix.archive_name }}.tar.gz
+            ${{ matrix.archive_name }}.zip
+          if-no-files-found: error
+
+  build-c:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: libnetstack_linux_amd64
+          - os: windows-latest
+            artifact_name: libnetstack_windows_amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build C library (Linux)
+        if: runner.os == 'Linux'
+        run: make -C c
+      - uses: msys2/setup-msys2@v2
+        if: runner.os == 'Windows'
+        with:
+          update: true
+          install: make mingw-w64-x86_64-gcc binutils
+      - name: Build C library (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: make -C c CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar
+      - name: Archive C library (Linux)
+        if: runner.os == 'Linux'
+        run: tar -C c -czf ${{ matrix.artifact_name }}.tar.gz libnetstack.a
+      - name: Archive C library (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "c/libnetstack.a" -DestinationPath "${{ matrix.artifact_name }}.zip"
+      - name: Upload C archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            ${{ matrix.artifact_name }}.tar.gz
+            ${{ matrix.artifact_name }}.zip
+          if-no-files-found: error
+
+  publish:
+    runs-on: ubuntu-latest
+    needs:
+      - build-go
+      - build-c
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Create release and upload files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
+          while IFS= read -r -d '' file; do
+            gh release upload "$tag" "$file" --clobber
+          done < <(find dist -type f -print0)

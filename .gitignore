@@ -1,0 +1,14 @@
+bin/
+c/*.a
+c/**/*.o
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+.idea/
+.vscode/
+*.swp
+*~
