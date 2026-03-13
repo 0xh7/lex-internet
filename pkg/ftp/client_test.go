@@ -4,11 +4,16 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 )
 
 func TestEnterPassiveUsesControlConnectionHost(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("loopback data-channel test is covered on Linux CI")
+	}
+
 	dataLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Listen(data): %v", err)

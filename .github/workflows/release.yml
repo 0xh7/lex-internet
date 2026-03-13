@@ -62,15 +62,20 @@ jobs:
       - name: Build C library (Linux)
         if: runner.os == 'Linux'
         run: make -C c
+      - name: Keep LF line endings for MSYS2 tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: git config --global core.autocrlf input
       - uses: msys2/setup-msys2@v2
         if: runner.os == 'Windows'
         with:
+          msystem: MINGW64
           update: true
-          install: make mingw-w64-x86_64-gcc binutils
+          install: make mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
       - name: Build C library (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
-        run: make -C c CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar
+        run: make -C c clean all CC=gcc AR=ar
       - name: Archive C library (Linux)
         if: runner.os == 'Linux'
         run: tar -C c -czf ${{ matrix.artifact_name }}.tar.gz libnetstack.a

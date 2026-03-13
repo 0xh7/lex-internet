@@ -4,11 +4,16 @@ import (
 	"bytes"
 	"encoding/binary"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 )
 
 func TestUDPResponseWriterSetsTCBitOnTruncation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("socket-level UDP test is covered on Linux CI")
+	}
+
 	serverConn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: 0})
 	if err != nil {
 		t.Fatalf("ListenUDP(server): %v", err)

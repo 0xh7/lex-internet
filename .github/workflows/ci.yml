@@ -55,10 +55,14 @@ jobs:
       run:
         shell: msys2 {0}
     steps:
+      - name: Keep LF line endings for MSYS2 tools
+        shell: pwsh
+        run: git config --global core.autocrlf input
       - uses: actions/checkout@v6
       - uses: msys2/setup-msys2@v2
         with:
+          msystem: MINGW64
           update: true
-          install: make mingw-w64-x86_64-gcc binutils
+          install: make mingw-w64-x86_64-gcc mingw-w64-x86_64-binutils
       - name: Build C library
-        run: make -C c CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar
+        run: make -C c clean all CC=gcc AR=ar
