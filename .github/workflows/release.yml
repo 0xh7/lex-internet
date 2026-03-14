@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: write
 
@@ -103,13 +106,23 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
+      - name: Validate downloaded artifacts
+        run: |
+          set -euo pipefail
+          mapfile -d '' files < <(find dist -type f -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "No release artifacts found under dist/"
+            exit 1
+          fi
+          printf 'Will publish %s artifacts\n' "${#files[@]}"
+          printf '%s\n' "${files[@]}"
       - name: Create release and upload files
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
           tag="${GITHUB_REF_NAME}"
+          mapfile -d '' files < <(find dist -type f -print0)
           gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --generate-notes
-          while IFS= read -r -d '' file; do
-            gh release upload "$tag" "$file" --clobber
-          done < <(find dist -type f -print0)
+          gh release upload "$tag" "${files[@]}" --clobber
