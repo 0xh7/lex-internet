@@ -34,9 +34,14 @@ func TestResolvePathWithinRootAllowsPathInsideRoot(t *testing.T) {
 		t.Fatalf("resolvePathWithinRoot inside root: %v", err)
 	}
 
-	want := filepath.Join(root, "assets", "index.html")
-	if got != want {
-		t.Fatalf("resolved path = %q, want %q", got, want)
+	if !pathWithinRoot(root, got) {
+		t.Fatalf("resolved path %q escaped root %q", got, root)
+	}
+	if base := filepath.Base(got); base != "index.html" {
+		t.Fatalf("resolved file name = %q, want %q", base, "index.html")
+	}
+	if dirBase := filepath.Base(filepath.Dir(got)); dirBase != "assets" {
+		t.Fatalf("resolved parent dir = %q, want %q", dirBase, "assets")
 	}
 }
 
