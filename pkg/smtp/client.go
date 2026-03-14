@@ -148,13 +148,10 @@ func (c *Client) SendMail(from string, to []string, msg []byte) error {
 }
 
 func (c *Client) command(format string, args ...interface{}) (int, string, error) {
-	for _, arg := range args {
-		if s, ok := arg.(string); ok && strings.ContainsAny(s, "\r\n") {
-			return 0, "", errSMTPCommandInjection
-		}
-	}
-
 	cmd := fmt.Sprintf(format, args...)
+	if strings.ContainsAny(cmd, "\r\n") {
+		return 0, "", errSMTPCommandInjection
+	}
 	if _, err := fmt.Fprintf(c.writer, "%s\r\n", cmd); err != nil {
 		return 0, "", fmt.Errorf("smtp: write: %w", err)
 	}

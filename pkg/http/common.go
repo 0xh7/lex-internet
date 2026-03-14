@@ -64,11 +64,20 @@ func parseHeaders(reader *bufio.Reader, headers map[string][]string) error {
 }
 
 func readBody(reader *bufio.Reader, headers map[string][]string, readUntilEOF bool) ([]byte, error) {
-	if te := headerGet(headers, "Transfer-Encoding"); strings.Contains(te, "chunked") {
+	if headerHasToken(headers, "Transfer-Encoding", "chunked") {
 		return readChunked(reader)
 	}
 
-	cl := headerGet(headers, "Content-Length")
+	clVals := headerValues(headers, "Content-Length")
+	cl := ""
+	if len(clVals) > 0 {
+		cl = strings.TrimSpace(clVals[0])
+		for i := 1; i < len(clVals); i++ {
+			if strings.TrimSpace(clVals[i]) != cl {
+				return nil, errors.New("http: conflicting Content-Length headers")
+			}
+		}
+	}
 	if cl == "" {
 		if !readUntilEOF {
 			return nil, nil
@@ -169,6 +178,22 @@ func headerGet(headers map[string][]string, key string) string {
 	return ""
 }
 
+func headerValues(headers map[string][]string, key string) []string {
+	canonical := canonicalHeaderKey(key)
+	return headers[canonical]
+}
+
+func headerHasToken(headers map[string][]string, key, token string) bool {
+	token = strings.ToLower(strings.TrimSpace(token))
+	for _, value := range headerValues(headers, key) {
+		for _, part := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), token) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 func sanitizeHeaderValue(v string) string {
 	return strings.Map(func(r rune) rune {

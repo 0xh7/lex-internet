@@ -223,7 +223,7 @@ func (p *HTTPProxy) handleHTTP(client net.Conn, req *http.Request) {
 func removeHopByHop(h http.Header) {
 	// Process Connection header value: any header listed in Connection
 	// is also hop-by-hop and must be removed (RFC 7230 Section 6.1).
-	if conn := h.Get("Connection"); conn != "" {
+	for _, conn := range h.Values("Connection") {
 		for _, name := range strings.Split(conn, ",") {
 			name = strings.TrimSpace(name)
 			if name != "" {

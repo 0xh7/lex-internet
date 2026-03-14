@@ -1,6 +1,7 @@
 package dhcp
 
 import (
+	"encoding/binary"
 	"net"
 	"testing"
 )
@@ -29,5 +30,20 @@ func TestMarshalIgnoresNonIPv4HeaderAddresses(t *testing.T) {
 	}
 	if got := net.IP(raw[24:28]).String(); got != "0.0.0.0" {
 		t.Fatalf("GIAddr bytes = %q, want 0.0.0.0", got)
+	}
+}
+
+func TestParseMessageOptionLengthDoesNotOverflow(t *testing.T) {
+	raw := make([]byte, minMsgLen+3)
+	raw[0] = OpRequest
+	raw[1] = 1
+	raw[2] = 6
+	binary.BigEndian.PutUint32(raw[headerLen:headerLen+4], magicCookie)
+	raw[minMsgLen] = OptMessageType
+	raw[minMsgLen+1] = 255
+	raw[minMsgLen+2] = MsgDiscover
+
+	if _, err := ParseMessage(raw); err == nil {
+		t.Fatal("ParseMessage() error = nil, want truncated option error")
 	}
 }

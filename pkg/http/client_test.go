@@ -66,3 +66,16 @@ func TestParseResponseDelimitedBodyIsReusable(t *testing.T) {
 		t.Fatal("expected parsed delimited response to be reusable")
 	}
 }
+
+func TestShouldReuseConnectionHonorsAnyCloseToken(t *testing.T) {
+	resp := &Response{
+		StatusCode: 200,
+		Headers: map[string][]string{
+			"Content-Length": {"5"},
+			"Connection":     {"keep-alive", "close"},
+		},
+	}
+	if shouldReuseConnection(resp, bufio.NewReader(strings.NewReader(""))) {
+		t.Fatal("expected response with any close token to be non-reusable")
+	}
+}

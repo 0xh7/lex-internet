@@ -227,6 +227,9 @@ func encodeNameChecked(name string) ([]byte, error) {
 	name = strings.TrimSuffix(name, ".")
 	var buf []byte
 	for _, label := range strings.Split(name, ".") {
+		if label == "" {
+			return nil, errors.New("dns: empty label")
+		}
 		if len(label) > 63 {
 			return nil, errors.New("dns: label exceeds 63 bytes")
 		}
@@ -296,6 +299,9 @@ func (ct *compressionTable) compressName(name string, buf []byte) ([]byte, error
 	labels := strings.Split(name, ".")
 
 	for i := range labels {
+		if labels[i] == "" {
+			return nil, errors.New("dns: empty label")
+		}
 		if len(labels[i]) > 63 {
 			return nil, errors.New("dns: label exceeds 63 bytes")
 		}

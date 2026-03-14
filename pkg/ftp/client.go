@@ -298,13 +298,12 @@ func (c *Client) enterPassive() (net.Conn, error) {
 }
 
 func (c *Client) command(format string, args ...interface{}) (int, string, error) {
-	for _, arg := range args {
-		if s, ok := arg.(string); ok && strings.ContainsAny(s, "\r\n") {
-			return 0, "", errFTPCommandInjection
-		}
+	cmd := fmt.Sprintf(format, args...)
+	if strings.ContainsAny(cmd, "\r\n") {
+		return 0, "", errFTPCommandInjection
 	}
 
-	if _, err := fmt.Fprintf(c.writer, format+"\r\n", args...); err != nil {
+	if _, err := fmt.Fprintf(c.writer, "%s\r\n", cmd); err != nil {
 		return 0, "", err
 	}
 	if err := c.writer.Flush(); err != nil {

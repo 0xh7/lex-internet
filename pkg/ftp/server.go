@@ -637,14 +637,14 @@ func (sess *session) openDataConn() (net.Conn, error) {
 			conn.Close()
 			return nil, errors.New("ftp: PASV connection from foreign IP rejected")
 		}
-		_ = conn.SetDeadline(time.Now().Add(5 * time.Minute))
+		_ = conn.SetDeadline(time.Time{})
 		return conn, nil
 	case sess.activeAddr != nil:
 		addr := sess.activeAddr
 		sess.activeAddr = nil
 		conn, err := net.DialTimeout("tcp", addr.String(), 10*time.Second)
 		if err == nil {
-			_ = conn.SetDeadline(time.Now().Add(5 * time.Minute))
+			_ = conn.SetDeadline(time.Time{})
 		}
 		return conn, err
 	default:
@@ -706,19 +706,54 @@ func (sess *session) resolvePath(raw string) (string, string, error) {
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", "", errors.New("ftp: path escapes root")
 	}
-	if resolved, err := filepath.EvalSymlinks(actual); err == nil {
-		rootReal := root
-		if rr, err := filepath.EvalSymlinks(root); err == nil {
-			rootReal = rr
-		}
-		relReal, err := filepath.Rel(rootReal, resolved)
-		if err != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) {
-			return "", "", errors.New("ftp: path escapes root via symlink")
-		}
-		actual = resolved
+	resolved, err := resolvePathInsideRoot(root, actual)
+	if err != nil {
+		return "", "", err
 	}
+	actual = resolved
 
 	return actual, virtual, nil
+}
+
+func resolvePathInsideRoot(root, actual string) (string, error) {
+	rootReal := root
+	if rr, err := filepath.EvalSymlinks(root); err == nil {
+		rootReal = rr
+	}
+
+	existing := actual
+	for {
+		if _, err := os.Lstat(existing); err == nil {
+			break
+		}
+		parent := filepath.Dir(existing)
+		if parent == existing {
+			break
+		}
+		existing = parent
+	}
+
+	resolved := actual
+	if _, err := os.Lstat(existing); err == nil {
+		suffix, err := filepath.Rel(existing, actual)
+		if err != nil {
+			return "", fmt.Errorf("ftp: resolve path: %w", err)
+		}
+		existingReal, err := filepath.EvalSymlinks(existing)
+		if err != nil {
+			return "", fmt.Errorf("ftp: resolve path: %w", err)
+		}
+		resolved = filepath.Clean(filepath.Join(existingReal, suffix))
+	}
+
+	relReal, err := filepath.Rel(rootReal, resolved)
+	if err != nil {
+		return "", fmt.Errorf("ftp: resolve path: %w", err)
+	}
+	if relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) {
+		return "", errors.New("ftp: path escapes root via symlink")
+	}
+	return resolved, nil
 }
 
 func (sess *session) reply(code int, format string, args ...interface{}) {

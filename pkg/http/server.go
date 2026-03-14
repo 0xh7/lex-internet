@@ -156,10 +156,11 @@ func (s *Server) handleConnection(conn net.Conn) {
 			headers: make(map[string][]string),
 		}
 
-		connection := strings.ToLower(req.Header("Connection"))
-		if req.Version == "HTTP/1.1" && connection != "close" {
+		connClose := headerHasToken(req.Headers, "Connection", "close")
+		connKeepAlive := headerHasToken(req.Headers, "Connection", "keep-alive")
+		if req.Version == "HTTP/1.1" && !connClose {
 			w.keepAlive = true
-		} else if connection == "keep-alive" {
+		} else if connKeepAlive {
 			w.keepAlive = true
 		}
 

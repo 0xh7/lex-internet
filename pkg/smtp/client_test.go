@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+type smtpStringer string
+
+func (s smtpStringer) String() string { return string(s) }
+
 var errSMTPWriteFailed = errors.New("smtp: write failed")
 
 type smtpFailingConn struct{}
@@ -66,5 +70,23 @@ func TestCommandRejectsCRLFInjection(t *testing.T) {
 	n, readErr := serverConn.Read(buf)
 	if n > 0 || readErr == nil {
 		t.Fatalf("server observed injected command bytes: %q", strings.TrimSpace(string(buf[:n])))
+	}
+}
+
+func TestCommandRejectsCRLFInjectionFromStringer(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	c := &Client{
+		conn:       clientConn,
+		reader:     bufio.NewReader(clientConn),
+		writer:     bufio.NewWriter(clientConn),
+		extensions: make(map[string]string),
+	}
+
+	_, _, err := c.command("MAIL FROM:<%v>", smtpStringer("a@b>\r\nRCPT TO:<evil@x>"))
+	if !errors.Is(err, errSMTPCommandInjection) {
+		t.Fatalf("command() error = %v, want %v", err, errSMTPCommandInjection)
 	}
 }

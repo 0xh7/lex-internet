@@ -66,6 +66,7 @@ type Engine struct {
 	connMu    sync.RWMutex
 	connTable map[connKey]*connEntry
 	stateful  atomic.Bool
+	fullLogNs atomic.Int64
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -203,6 +204,7 @@ func (e *Engine) trackConn(info PacketInfo) {
 	if len(e.connTable) >= maxConnTableSize {
 		e.purgeExpiredLocked()
 		if len(e.connTable) >= maxConnTableSize {
+			e.logConnTableFull(info)
 			return
 		}
 	}
@@ -212,6 +214,29 @@ func (e *Engine) trackConn(info PacketInfo) {
 		state:    stateNew,
 		lastSeen: time.Now(),
 	}
+}
+
+func (e *Engine) logConnTableFull(info PacketInfo) {
+	now := time.Now().UnixNano()
+	last := e.fullLogNs.Load()
+	if now-last < int64(time.Minute) {
+		return
+	}
+	if !e.fullLogNs.CompareAndSwap(last, now) {
+		return
+	}
+
+	e.loggerMu.RLock()
+	l := e.logger
+	e.loggerMu.RUnlock()
+	if l == nil {
+		return
+	}
+
+	l.Printf(
+		"firewall: connection table full (%d entries), skipping tracking for %s:%d -> %s:%d proto=%s",
+		len(e.connTable), info.SrcIP, info.SrcPort, info.DstIP, info.DstPort, info.Protocol,
+	)
 }
 
 func (e *Engine) cleanupLoop() {

@@ -96,3 +96,17 @@ func TestParseRequestWithoutBodyLengthKeepsNextRequest(t *testing.T) {
 		t.Fatalf("second path = %q, want %q", second.Path, "/two")
 	}
 }
+
+func TestParseResponseRejectsConflictingContentLengthHeaders(t *testing.T) {
+	reader := bufio.NewReader(strings.NewReader(strings.Join([]string{
+		"HTTP/1.1 200 OK",
+		"Content-Length: 5",
+		"Content-Length: 7",
+		"",
+		"payload",
+	}, "\r\n")))
+
+	if _, err := ParseResponse(reader); err == nil {
+		t.Fatal("ParseResponse() error = nil, want conflicting Content-Length error")
+	}
+}

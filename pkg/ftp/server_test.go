@@ -3,7 +3,9 @@ package ftp
 import (
 	"io"
 	"net"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -83,5 +85,27 @@ func TestPassiveIPFallsBackWhenLocalAddrIsIPv6(t *testing.T) {
 	ip := sess.passiveIP()
 	if ip == nil || ip.To4() == nil {
 		t.Fatalf("passiveIP() = %v, want non-nil IPv4", ip)
+	}
+}
+
+func TestResolvePathRejectsSymlinkParentEscapeForCreate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics/permissions vary on Windows runners")
+	}
+
+	root := t.TempDir()
+	outside := t.TempDir()
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skipf("symlink not available: %v", err)
+	}
+
+	sess := &session{
+		server: &Server{rootDir: root},
+		cwd:    "/",
+	}
+
+	if _, _, err := sess.resolvePath("/link/new-file.txt"); err == nil {
+		t.Fatal("resolvePath() error = nil, want symlink escape error")
 	}
 }

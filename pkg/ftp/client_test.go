@@ -11,6 +11,10 @@ import (
 	"time"
 )
 
+type ftpStringer string
+
+func (s ftpStringer) String() string { return string(s) }
+
 func TestEnterPassiveUsesControlConnectionHost(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("loopback data-channel test is covered on Linux CI")
@@ -111,5 +115,23 @@ func TestCommandRejectsCRLFInjection(t *testing.T) {
 	n, readErr := serverConn.Read(buf)
 	if n > 0 || readErr == nil {
 		t.Fatalf("server observed injected command bytes: %q", strings.TrimSpace(string(buf[:n])))
+	}
+}
+
+func TestCommandRejectsCRLFInjectionFromStringer(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	client := &Client{
+		conn:   clientConn,
+		reader: bufio.NewReader(clientConn),
+		writer: bufio.NewWriter(clientConn),
+		host:   "127.0.0.1",
+	}
+
+	_, _, err := client.command("USER %v", ftpStringer("attacker\r\nQUIT"))
+	if !errors.Is(err, errFTPCommandInjection) {
+		t.Fatalf("command() error = %v, want %v", err, errFTPCommandInjection)
 	}
 }

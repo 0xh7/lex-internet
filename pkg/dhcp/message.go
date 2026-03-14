@@ -113,15 +113,15 @@ func ParseMessage(raw []byte) (*Message, error) {
 		if len(opts) < 2 {
 			return nil, errors.New("dhcp: truncated option")
 		}
-		length := opts[1]
-		if len(opts) < int(2+length) {
+		length := int(opts[1])
+		if len(opts) < 2+length {
 			return nil, errors.New("dhcp: option data truncated")
 		}
 		data := make([]byte, length)
 		copy(data, opts[2:2+length])
 		m.Options = append(m.Options, Option{
 			Code:   code,
-			Length: length,
+			Length: uint8(length),
 			Data:   data,
 		})
 		opts = opts[2+length:]

@@ -234,7 +234,7 @@ func shouldReuseConnection(resp *Response, reader *bufio.Reader) bool {
 	if reader.Buffered() != 0 {
 		return false
 	}
-	if strings.EqualFold(resp.Header("Connection"), "close") {
+	if headerHasToken(resp.Headers, "Connection", "close") {
 		return false
 	}
 	if hasBodylessStatus(resp.StatusCode) {
@@ -243,7 +243,7 @@ func shouldReuseConnection(resp *Response, reader *bufio.Reader) bool {
 	if resp.Header("Content-Length") != "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(resp.Header("Transfer-Encoding")), "chunked")
+	return headerHasToken(resp.Headers, "Transfer-Encoding", "chunked")
 }
 
 func hasBodylessStatus(code int) bool {

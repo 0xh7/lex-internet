@@ -119,38 +119,26 @@ func RateLimit(rps int) MiddlewareFunc {
 
 func RateLimitWithStop(rps int, stop <-chan struct{}) MiddlewareFunc {
 	buckets := &sync.Map{}
-	var lastCleanup sync.Mutex
-	lastCleanupTime := time.Now()
-
-	if stop != nil {
-		go func() {
-			ticker := time.NewTicker(5 * time.Minute)
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ticker.C:
-					cleanupBuckets(buckets)
-				case <-stop:
-					return
-				}
-			}
-		}()
+	if stop == nil {
+		stop = make(chan struct{})
 	}
+
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				cleanupBuckets(buckets)
+			case <-stop:
+				return
+			}
+		}
+	}()
 
 	return func(next HandlerFunc) HandlerFunc {
 		return func(req *Request, w *ResponseWriter) {
-			if stop == nil {
-				lastCleanup.Lock()
-				if time.Since(lastCleanupTime) > 5*time.Minute {
-					lastCleanupTime = time.Now()
-					lastCleanup.Unlock()
-					cleanupBuckets(buckets)
-				} else {
-					lastCleanup.Unlock()
-				}
-			}
-
 			addr := req.RemoteAddr
 			if host, _, err := net.SplitHostPort(addr); err == nil {
 				addr = host
