@@ -45,6 +45,28 @@ func TestResolvePathWithinRootAllowsPathInsideRoot(t *testing.T) {
 	}
 }
 
+func TestResolvePathWithinRootAllowsPathInsideSymlinkedRoot(t *testing.T) {
+	realRoot := t.TempDir()
+	linkParent := t.TempDir()
+	linkRoot := filepath.Join(linkParent, "root-link")
+
+	if err := os.Symlink(realRoot, linkRoot); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	got, err := resolvePathWithinRoot(linkRoot, filepath.Join("assets", "index.html"))
+	if err != nil {
+		t.Fatalf("resolvePathWithinRoot symlinked root: %v", err)
+	}
+
+	if !pathWithinRoot(realRoot, got) {
+		t.Fatalf("resolved path %q escaped real root %q", got, realRoot)
+	}
+	if base := filepath.Base(got); base != "index.html" {
+		t.Fatalf("resolved file name = %q, want %q", base, "index.html")
+	}
+}
+
 func TestResolvePathWithinRootRejectsSymlinkEscape(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symlink semantics/permissions vary on Windows runners; covered on Linux CI")

@@ -395,6 +395,11 @@ func resolvePathWithinRoot(rootDir, path string) (string, error) {
 		parent := filepath.Dir(candidateAbs)
 		if resolvedParent, perr := filepath.EvalSymlinks(parent); perr == nil {
 			resolvedCandidate = filepath.Join(resolvedParent, filepath.Base(candidateAbs))
+		} else if relToRoot, rerr := filepath.Rel(rootAbs, candidateAbs); rerr == nil {
+			// Keep non-existent descendants anchored to the canonical root path.
+			// This avoids false traversal failures when rootAbs and rootReal use
+			// different path spellings (for example 8.3 vs long paths on Windows).
+			resolvedCandidate = filepath.Join(rootReal, relToRoot)
 		}
 	}
 	if !pathWithinRoot(rootReal, resolvedCandidate) {
