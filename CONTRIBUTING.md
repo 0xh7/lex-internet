@@ -42,6 +42,7 @@ Notes:
 - Update `README.md`, examples, or CLI help when changing user-facing behavior.
 - Add or update tests when changing behavior, parsing logic, or protocol handling.
 - If a protocol change is based on an RFC or packet capture, mention that in the PR description.
+- By contributing, you agree that your changes will be released under the MIT License used by this repository.
 
 ## Pull Request Checklist
 

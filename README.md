@@ -4,6 +4,12 @@
 
 The repo mixes protocol packages, small servers and clients, and lower-level packet code. Some parts are here because they are useful, some because they are good for learning, and some because rebuilding common network pieces is a good way to understand how they actually behave.
 
+## Scope and Status
+
+- This is an educational lab project, not a production network stack.
+- Implementations are intended for learning, demos, and tests.
+- Protocol behavior covers common paths first; RFC edge cases are still being improved.
+
 ## Architecture
 
 ```
@@ -37,9 +43,9 @@ lex-internet/
 │   ├── arp-tool/           # ARP scanner and resolver
 │   ├── dhcp-server/        # DHCP server with IP pool management
 │   ├── dns-client/         # DNS lookup client (dig-like)
-│   ├── dns-server/         # Authoritative + recursive DNS server
+│   ├── dns-server/         # Authoritative DNS + recursive resolver
 │   ├── firewall/           # Stateful packet filtering proxy
-│   ├── ftp-server/         # Full FTP server (PASV, PORT, auth)
+│   ├── ftp-server/         # FTP server (PASV, PORT, auth)
 │   ├── http-client/        # HTTP/1.1 client with redirects
 │   ├── http-server/        # HTTP/1.1 server with REST API demo
 │   ├── nat-gateway/        # Userland NAT relay
@@ -55,7 +61,7 @@ lex-internet/
 ├── pkg/                    # Reusable Go packages
 │   ├── arp/                # ARP packet marshal/parse
 │   ├── dhcp/               # DHCP message + server
-│   ├── dns/                # Full DNS: message, zone, cache, resolver, server
+│   ├── dns/                # DNS message, zone, cache, resolver, server
 │   ├── ethernet/           # Ethernet frame handling
 │   ├── firewall/           # Rule engine + stateful connection tracking
 │   ├── ftp/                # FTP client + server
@@ -72,7 +78,6 @@ lex-internet/
 ├── examples/               # Example configuration files
 │   ├── zones/              # DNS zone files
 │   └── firewall.rules      # Firewall rule file
-├── scripts/                # Build helper scripts
 ├── .github/workflows/      # CI pipeline
 ├── go.mod
 └── Makefile
@@ -205,11 +210,11 @@ go run ./cmd/tls-server -listen :8443 -hosts localhost
 | L3 | `pkg/routing` | Routing table with longest-prefix match, metric support |
 | L4 | `pkg/tcp` | TCP segment with flags, options, padding |
 | L4 | `pkg/udp` | UDP datagram with auto length |
-| L7 | `pkg/dns` | Full DNS: wire format, compression, zones, caching, recursive resolver |
-| L7 | `pkg/http` | HTTP/1.1 with trie router, connection pooling, chunked encoding, middleware |
-| L7 | `pkg/tls` | TLS 1.2 record/handshake parsing + self-signed cert generation |
-| L7 | `pkg/ftp` | FTP client + server (PASV, PORT, AUTH, file ops) |
-| L7 | `pkg/smtp` | SMTP client + server (EHLO, PIPELINING, 8BITMIME) |
+| L7 | `pkg/dns` | DNS wire format, compression, zones, caching, recursive resolver |
+| L7 | `pkg/http` | HTTP/1.1 server/client, trie router, middleware, chunked encoding |
+| L7 | `pkg/tls` | TLS record/handshake parsing helpers + self-signed cert generation |
+| L7 | `pkg/ftp` | FTP client/server with PASV, PORT, auth, and file operations |
+| L7 | `pkg/smtp` | SMTP client/server with EHLO, PIPELINING, and 8BITMIME support |
 | L7 | `pkg/dhcp` | DHCP message format + server with lease management |
 | Infra | `pkg/firewall` | Stateful firewall with connection tracking, rule files |
 | Infra | `pkg/nat` | NAT translation table with port allocation |
@@ -252,6 +257,10 @@ Good areas to work on:
 - Expand protocol compliance and edge-case handling
 - Improve examples, docs, and cross-platform behavior
 
+## License
+
+This project is released under the MIT License. See `LICENSE` for the full text.
+
 ## Notes
 
 - All Go packages use only the standard library
@@ -259,3 +268,4 @@ Good areas to work on:
 - Raw socket tools need `CAP_NET_RAW` on Linux or Administrator on Windows
 - The TLS wrapper uses Go's `crypto/tls` while exposing simplified handshake helpers
 - The NAT gateway runs as a userland TCP relay without kernel packet forwarding
+- Releases are milestone snapshots; protocol coverage will continue to evolve
