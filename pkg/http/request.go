@@ -55,7 +55,7 @@ func ParseRequest(reader *bufio.Reader) (*Request, error) {
 		req.Host = host
 	}
 
-	body, err := readBody(reader, req.Headers)
+	body, err := readBody(reader, req.Headers, false)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (r *Request) Marshal() []byte {
 
 	for key, vals := range r.Headers {
 		for _, v := range vals {
-			fmt.Fprintf(&buf, "%s: %s\r\n", key, v)
+			fmt.Fprintf(&buf, "%s: %s\r\n", sanitizeHeaderValue(key), sanitizeHeaderValue(v))
 		}
 	}
 	buf.WriteString("\r\n")

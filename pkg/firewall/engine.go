@@ -52,9 +52,12 @@ type FirewallStats struct {
 	ActiveConns int
 }
 
+const maxConnTableSize = 100000
+
 type Engine struct {
-	rules  *RuleSet
-	logger *log.Logger
+	rules    *RuleSet
+	loggerMu sync.RWMutex
+	logger   *log.Logger
 
 	allowed atomic.Uint64
 	denied  atomic.Uint64
@@ -86,7 +89,9 @@ func (e *Engine) SetStateful(enabled bool) {
 }
 
 func (e *Engine) SetLogger(l *log.Logger) {
+	e.loggerMu.Lock()
 	e.logger = l
+	e.loggerMu.Unlock()
 }
 
 func (e *Engine) Process(info PacketInfo) bool {
@@ -195,6 +200,13 @@ func (e *Engine) trackConn(info PacketInfo) {
 	e.connMu.Lock()
 	defer e.connMu.Unlock()
 
+	if len(e.connTable) >= maxConnTableSize {
+		e.purgeExpiredLocked()
+		if len(e.connTable) >= maxConnTableSize {
+			return
+		}
+	}
+
 	k := e.makeKey(info)
 	e.connTable[k] = &connEntry{
 		state:    stateNew,
@@ -219,7 +231,10 @@ func (e *Engine) cleanupLoop() {
 func (e *Engine) purgeExpired() {
 	e.connMu.Lock()
 	defer e.connMu.Unlock()
+	e.purgeExpiredLocked()
+}
 
+func (e *Engine) purgeExpiredLocked() {
 	now := time.Now()
 	for k, entry := range e.connTable {
 		if now.Sub(entry.lastSeen) > connTimeout {

@@ -216,8 +216,14 @@ func (s *Server) handleDecline(req *Message) {
 }
 
 func (s *Server) buildReply(req *Message, msgType uint8, yiaddr net.IP) *Message {
-	gateway4 := s.pool.Gateway.To4()
-	dns4 := s.pool.DNS.To4()
+	var gateway4 net.IP
+	if s.pool.Gateway != nil {
+		gateway4 = s.pool.Gateway.To4()
+	}
+	var dns4 net.IP
+	if s.pool.DNS != nil {
+		dns4 = s.pool.DNS.To4()
+	}
 	subnet := []byte(s.pool.Subnet)
 
 	reply := &Message{
@@ -281,9 +287,10 @@ func (s *Server) allocateIP(mac net.HardwareAddr) net.IP {
 		return nil
 	}
 
-	for n := startN; ; n++ {
+	for n := uint64(startN); n <= uint64(endN); n++ {
+		candidateN := uint32(n)
 		candidate := make(net.IP, 4)
-		binary.BigEndian.PutUint32(candidate, n)
+		binary.BigEndian.PutUint32(candidate, candidateN)
 		if !s.allocated[candidate.String()] {
 			lease := &Lease{
 				IP:     candidate,
@@ -293,9 +300,6 @@ func (s *Server) allocateIP(mac net.HardwareAddr) net.IP {
 			s.leases[macStr] = lease
 			s.allocated[candidate.String()] = true
 			return lease.IP
-		}
-		if n == endN {
-			break
 		}
 	}
 

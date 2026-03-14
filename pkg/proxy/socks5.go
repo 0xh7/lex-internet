@@ -108,6 +108,8 @@ func (s *SOCKS5Server) Close() error {
 func (s *SOCKS5Server) handle(conn net.Conn) {
 	defer conn.Close()
 
+	conn.SetDeadline(time.Now().Add(60 * time.Second))
+
 	if err := s.negotiate(conn); err != nil {
 		s.logger.Printf("[%s] negotiation failed: %v", conn.RemoteAddr(), err)
 		return

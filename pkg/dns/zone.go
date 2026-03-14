@@ -125,8 +125,8 @@ func LoadZoneFile(path string) (*Zone, error) {
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := stripComment(scanner.Text())
-		line = strings.TrimSpace(line)
+		rawLine := stripComment(scanner.Text())
+		line := strings.TrimSpace(rawLine)
 		if line == "" {
 			continue
 		}
@@ -154,7 +154,7 @@ func LoadZoneFile(path string) (*Zone, error) {
 			zone = NewZone(origin)
 		}
 
-		rr, name, err := parseZoneLine(line, lastName, origin, defaultTTL)
+		rr, name, err := parseZoneLine(rawLine, lastName, origin, defaultTTL)
 		if err != nil {
 			continue
 		}
@@ -169,6 +169,8 @@ func LoadZoneFile(path string) (*Zone, error) {
 }
 
 func parseZoneLine(line, lastName, origin string, defaultTTL uint32) (ResourceRecord, string, error) {
+	ownerOmitted := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
+	line = strings.TrimSpace(line)
 	fields := strings.Fields(line)
 	if len(fields) < 3 {
 		return ResourceRecord{}, "", fmt.Errorf("too few fields")
@@ -178,7 +180,7 @@ func parseZoneLine(line, lastName, origin string, defaultTTL uint32) (ResourceRe
 	name := fields[idx]
 	if name == "@" {
 		name = origin
-	} else if isRRType(name) || isClass(name) || isTTL(name) {
+	} else if ownerOmitted || isRRType(name) || isClass(name) {
 		name = lastName
 		idx--
 	}
@@ -255,7 +257,7 @@ func buildRData(rrType uint16, fields []string, origin string) ([]byte, error) {
 
 	case TypeNS, TypeCNAME, TypePTR:
 		target := qualify(fields[0], origin)
-		return encodeName(target), nil
+		return encodeNameChecked(target)
 
 	case TypeMX:
 		if len(fields) < 2 {
@@ -268,7 +270,11 @@ func buildRData(rrType uint16, fields []string, origin string) ([]byte, error) {
 		exchange := qualify(fields[1], origin)
 		buf := make([]byte, 2)
 		binary.BigEndian.PutUint16(buf, uint16(pref))
-		return append(buf, encodeName(exchange)...), nil
+		enc, err := encodeNameChecked(exchange)
+		if err != nil {
+			return nil, err
+		}
+		return append(buf, enc...), nil
 
 	case TypeTXT:
 		text := strings.Join(fields, " ")
@@ -293,8 +299,16 @@ func buildRData(rrType uint16, fields []string, origin string) ([]byte, error) {
 		mname := qualify(fields[0], origin)
 		rname := qualify(fields[1], origin)
 		var buf []byte
-		buf = append(buf, encodeName(mname)...)
-		buf = append(buf, encodeName(rname)...)
+		mnameEnc, err := encodeNameChecked(mname)
+		if err != nil {
+			return nil, err
+		}
+		rnameEnc, err := encodeNameChecked(rname)
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, mnameEnc...)
+		buf = append(buf, rnameEnc...)
 		for _, f := range fields[2:7] {
 			f = strings.Trim(f, "()")
 			v, err := strconv.ParseUint(f, 10, 32)
@@ -322,7 +336,11 @@ func buildRData(rrType uint16, fields []string, origin string) ([]byte, error) {
 			buf = append(buf, b...)
 		}
 		target := qualify(fields[3], origin)
-		return append(buf, encodeName(target)...), nil
+		targetEnc, err := encodeNameChecked(target)
+		if err != nil {
+			return nil, err
+		}
+		return append(buf, targetEnc...), nil
 	}
 
 	return nil, fmt.Errorf("unsupported record type for zone file: %s", TypeToString(rrType))
@@ -330,8 +348,11 @@ func buildRData(rrType uint16, fields []string, origin string) ([]byte, error) {
 
 func qualify(name, origin string) string {
 	name = strings.TrimSuffix(name, ".")
-	if name == "@" {
+	if name == "@" || name == "" {
 		return origin
+	}
+	if !strings.Contains(name, ".") && origin != "" {
+		return name + "." + origin
 	}
 	return name
 }
@@ -383,12 +404,16 @@ func parseTTL(s string) (uint32, error) {
 		return 0, fmt.Errorf("empty ttl")
 	}
 
-	var total uint32
-	var current uint32
+	const maxTTL = uint64(0xFFFFFFFF)
+	var total uint64
+	var current uint64
 	for _, ch := range s {
 		switch {
 		case ch >= '0' && ch <= '9':
-			current = current*10 + uint32(ch-'0')
+			current = current*10 + uint64(ch-'0')
+			if current > maxTTL {
+				return 0, fmt.Errorf("ttl overflow: %s", s)
+			}
 		case ch == 's' || ch == 'S':
 			total += current
 			current = 0
@@ -407,7 +432,13 @@ func parseTTL(s string) (uint32, error) {
 		default:
 			return 0, fmt.Errorf("invalid ttl: %s", s)
 		}
+		if total > maxTTL {
+			return 0, fmt.Errorf("ttl overflow: %s", s)
+		}
 	}
 	total += current
-	return total, nil
+	if total > maxTTL {
+		return 0, fmt.Errorf("ttl overflow: %s", s)
+	}
+	return uint32(total), nil
 }

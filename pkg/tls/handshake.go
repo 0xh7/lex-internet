@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -198,21 +199,25 @@ func (ch *ClientHello) Marshal() []byte {
 	return buf
 }
 
-func BuildServerHello(sessionID []byte, cipherSuite uint16) *ServerHello {
+func BuildServerHello(sessionID []byte, cipherSuite uint16) (*ServerHello, error) {
 	sh := &ServerHello{
 		Version:           VersionTLS12,
 		CipherSuite:       cipherSuite,
 		CompressionMethod: 0,
 	}
-	rand.Read(sh.Random[:])
+	if _, err := rand.Read(sh.Random[:]); err != nil {
+		return nil, fmt.Errorf("tls: generating random: %w", err)
+	}
 	if sessionID != nil {
 		sh.SessionID = make([]byte, len(sessionID))
 		copy(sh.SessionID, sessionID)
 	} else {
 		sh.SessionID = make([]byte, 32)
-		rand.Read(sh.SessionID)
+		if _, err := rand.Read(sh.SessionID); err != nil {
+			return nil, fmt.Errorf("tls: generating session ID: %w", err)
+		}
 	}
-	return sh
+	return sh, nil
 }
 
 func (sh *ServerHello) Marshal() []byte {

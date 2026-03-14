@@ -63,14 +63,28 @@ func parseHeaders(reader *bufio.Reader, headers map[string][]string) error {
 	return nil
 }
 
-func readBody(reader *bufio.Reader, headers map[string][]string) ([]byte, error) {
+func readBody(reader *bufio.Reader, headers map[string][]string, readUntilEOF bool) ([]byte, error) {
 	if te := headerGet(headers, "Transfer-Encoding"); strings.Contains(te, "chunked") {
 		return readChunked(reader)
 	}
 
 	cl := headerGet(headers, "Content-Length")
 	if cl == "" {
-		return nil, nil
+		if !readUntilEOF {
+			return nil, nil
+		}
+
+		body, err := io.ReadAll(io.LimitReader(reader, maxBodySize+1))
+		if err != nil {
+			return nil, fmt.Errorf("http: reading body: %w", err)
+		}
+		if len(body) == 0 {
+			return nil, nil
+		}
+		if len(body) > maxBodySize {
+			return nil, errors.New("http: body exceeds maximum")
+		}
+		return body, nil
 	}
 
 	length, err := strconv.Atoi(cl)
@@ -153,4 +167,14 @@ func headerGet(headers map[string][]string, key string) string {
 		return vals[0]
 	}
 	return ""
+}
+
+
+func sanitizeHeaderValue(v string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' {
+			return -1
+		}
+		return r
+	}, v)
 }

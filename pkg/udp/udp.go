@@ -44,8 +44,11 @@ func Parse(raw []byte) (*Datagram, error) {
 	return d, nil
 }
 
-func (d *Datagram) Marshal() []byte {
+func (d *Datagram) Marshal() ([]byte, error) {
 	totalLen := headerLen + len(d.Payload)
+	if totalLen > 0xFFFF {
+		return nil, errors.New("udp: datagram exceeds maximum size (65535 bytes)")
+	}
 	buf := make([]byte, totalLen)
 
 	binary.BigEndian.PutUint16(buf[0:2], d.SrcPort)
@@ -54,14 +57,18 @@ func (d *Datagram) Marshal() []byte {
 	binary.BigEndian.PutUint16(buf[6:8], d.Checksum)
 	copy(buf[headerLen:], d.Payload)
 
-	return buf
+	return buf, nil
 }
 
-func New(srcPort, dstPort uint16, payload []byte) *Datagram {
+func New(srcPort, dstPort uint16, payload []byte) (*Datagram, error) {
+	totalLen := headerLen + len(payload)
+	if totalLen > 0xFFFF {
+		return nil, errors.New("udp: payload too large for UDP datagram")
+	}
 	return &Datagram{
 		SrcPort: srcPort,
 		DstPort: dstPort,
-		Length:  uint16(headerLen + len(payload)),
+		Length:  uint16(totalLen),
 		Payload: payload,
-	}
+	}, nil
 }

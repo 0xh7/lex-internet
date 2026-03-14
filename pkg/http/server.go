@@ -227,7 +227,7 @@ func (w *ResponseWriter) WriteHeader(code int) {
 
 	for key, vals := range w.headers {
 		for _, v := range vals {
-			fmt.Fprintf(&buf, "%s: %s\r\n", key, v)
+			fmt.Fprintf(&buf, "%s: %s\r\n", sanitizeHeaderValue(key), sanitizeHeaderValue(v))
 		}
 	}
 	buf.WriteString("\r\n")

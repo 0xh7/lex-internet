@@ -160,6 +160,7 @@ func decodeName(raw []byte, offset int) (string, int, error) {
 	visited := make(map[int]bool)
 	cur := offset
 	finalOffset := -1
+	totalLen := 0
 
 	for {
 		if cur >= len(raw) {
@@ -188,10 +189,17 @@ func decodeName(raw []byte, offset int) (string, int, error) {
 			cur = ptr
 			continue
 		}
+		if length > 63 {
+			return "", 0, errors.New("dns: label exceeds 63 bytes")
+		}
 
 		cur++
 		if cur+length > len(raw) {
 			return "", 0, errors.New("dns: label extends beyond message")
+		}
+		totalLen += 1 + length // length byte + label data
+		if totalLen > 254 {    // 255 including final zero byte
+			return "", 0, errors.New("dns: name exceeds 255 bytes")
 		}
 		parts = append(parts, string(raw[cur:cur+length]))
 		cur += length
@@ -205,17 +213,31 @@ func decodeName(raw []byte, offset int) (string, int, error) {
 }
 
 func encodeName(name string) []byte {
-	if name == "" || name == "." {
+	encoded, err := encodeNameChecked(name)
+	if err != nil {
 		return []byte{0}
+	}
+	return encoded
+}
+
+func encodeNameChecked(name string) ([]byte, error) {
+	if name == "" || name == "." {
+		return []byte{0}, nil
 	}
 	name = strings.TrimSuffix(name, ".")
 	var buf []byte
 	for _, label := range strings.Split(name, ".") {
+		if len(label) > 63 {
+			return nil, errors.New("dns: label exceeds 63 bytes")
+		}
 		buf = append(buf, byte(len(label)))
 		buf = append(buf, []byte(label)...)
 	}
 	buf = append(buf, 0)
-	return buf
+	if len(buf) > 255 {
+		return nil, errors.New("dns: encoded name exceeds 255 bytes")
+	}
+	return buf, nil
 }
 
 func (m *Message) Marshal() ([]byte, error) {
@@ -266,19 +288,22 @@ func newCompressionTable() *compressionTable {
 	return &compressionTable{offsets: make(map[string]int)}
 }
 
-func (ct *compressionTable) compressName(name string, buf []byte) []byte {
+func (ct *compressionTable) compressName(name string, buf []byte) ([]byte, error) {
 	if name == "" || name == "." {
-		return append(buf, 0)
+		return append(buf, 0), nil
 	}
 	name = strings.TrimSuffix(name, ".")
 	labels := strings.Split(name, ".")
 
 	for i := range labels {
+		if len(labels[i]) > 63 {
+			return nil, errors.New("dns: label exceeds 63 bytes")
+		}
 		suffix := strings.Join(labels[i:], ".")
 		if ptr, ok := ct.offsets[suffix]; ok && ptr <= 0x3fff {
 			p := uint16(0xc000) | uint16(ptr)
 			buf = append(buf, byte(p>>8), byte(p))
-			return buf
+			return buf, nil
 		}
 		pos := len(buf)
 		if pos <= 0x3fff {
@@ -288,11 +313,15 @@ func (ct *compressionTable) compressName(name string, buf []byte) []byte {
 		buf = append(buf, []byte(labels[i])...)
 	}
 	buf = append(buf, 0)
-	return buf
+	return buf, nil
 }
 
 func marshalQuestion(buf []byte, q Question, ct *compressionTable) ([]byte, error) {
-	buf = ct.compressName(q.Name, buf)
+	var err error
+	buf, err = ct.compressName(q.Name, buf)
+	if err != nil {
+		return nil, err
+	}
 	tail := [4]byte{}
 	binary.BigEndian.PutUint16(tail[0:2], q.Type)
 	binary.BigEndian.PutUint16(tail[2:4], q.Class)
@@ -300,7 +329,11 @@ func marshalQuestion(buf []byte, q Question, ct *compressionTable) ([]byte, erro
 }
 
 func marshalRR(buf []byte, rr ResourceRecord, ct *compressionTable) ([]byte, error) {
-	buf = ct.compressName(rr.Name, buf)
+	var err error
+	buf, err = ct.compressName(rr.Name, buf)
+	if err != nil {
+		return nil, err
+	}
 
 	fixed := [10]byte{}
 	binary.BigEndian.PutUint16(fixed[0:2], rr.Type)
@@ -310,12 +343,19 @@ func marshalRR(buf []byte, rr ResourceRecord, ct *compressionTable) ([]byte, err
 	var rdata []byte
 	switch rr.Type {
 	case TypeCNAME, TypeNS, TypePTR:
-		rdata = ct.compressName(rdataToName(rr.RData), nil)
+		rdata, err = ct.compressName(rdataToName(rr.RData), nil)
+		if err != nil {
+			return nil, err
+		}
 	case TypeMX:
 		if len(rr.RData) < 3 {
 			return nil, errors.New("dns: invalid MX rdata")
 		}
-		rdata = append([]byte{rr.RData[0], rr.RData[1]}, ct.compressName(rdataToName(rr.RData[2:]), nil)...)
+		exchange, err := ct.compressName(rdataToName(rr.RData[2:]), nil)
+		if err != nil {
+			return nil, err
+		}
+		rdata = append([]byte{rr.RData[0], rr.RData[1]}, exchange...)
 	default:
 		rdata = rr.RData
 	}

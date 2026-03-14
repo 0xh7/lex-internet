@@ -3,6 +3,7 @@ package ftp
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,8 @@ type Client struct {
 	writer *bufio.Writer
 	host   string
 }
+
+var errFTPCommandInjection = errors.New("ftp: command argument contains CR or LF")
 
 func Dial(addr string) (*Client, error) {
 	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
@@ -92,9 +95,13 @@ func (c *Client) List(path string) ([]string, error) {
 		return nil, fmt.Errorf("ftp: LIST failed with %d", code)
 	}
 
-	data, err := io.ReadAll(dataConn)
+	const maxListSize = 16 * 1024 * 1024
+	data, err := io.ReadAll(io.LimitReader(dataConn, maxListSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxListSize {
+		return nil, errors.New("ftp: LIST response too large")
 	}
 
 	code, _, err = c.readResponse()
@@ -131,9 +138,13 @@ func (c *Client) Get(remote string) ([]byte, error) {
 		return nil, fmt.Errorf("ftp: RETR failed with %d", code)
 	}
 
-	data, err := io.ReadAll(dataConn)
+	const maxFileSize = 512 * 1024 * 1024
+	data, err := io.ReadAll(io.LimitReader(dataConn, maxFileSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(data) > maxFileSize {
+		return nil, errors.New("ftp: RETR response too large")
 	}
 
 	code, _, err = c.readResponse()
@@ -152,22 +163,24 @@ func (c *Client) Put(remote string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	defer dataConn.Close()
 
 	code, _, err := c.command("STOR %s", remote)
 	if err != nil {
+		_ = dataConn.Close()
 		return err
 	}
 	if code != 125 && code != 150 {
+		_ = dataConn.Close()
 		return fmt.Errorf("ftp: STOR failed with %d", code)
 	}
 
 	if _, err := io.Copy(dataConn, bytes.NewReader(data)); err != nil {
-		return err
+		_ = dataConn.Close()
+		return fmt.Errorf("ftp: STOR data transfer: %w", err)
 	}
 
-	if tcp, ok := dataConn.(*net.TCPConn); ok {
-		tcp.CloseWrite()
+	if err := dataConn.Close(); err != nil {
+		return fmt.Errorf("ftp: STOR close data connection: %w", err)
 	}
 
 	code, _, err = c.readResponse()
@@ -268,17 +281,29 @@ func (c *Client) enterPassive() (net.Conn, error) {
 	for _, part := range parts {
 		n, err := strconv.Atoi(strings.TrimSpace(part))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("ftp: malformed PASV address %q: %w", msg, err)
+		}
+		if n < 0 || n > 255 {
+			return nil, fmt.Errorf("ftp: PASV value out of range: %d", n)
 		}
 		values = append(values, n)
 	}
 
 	port := values[4]*256 + values[5]
+	if port <= 0 || port > 65535 {
+		return nil, fmt.Errorf("ftp: PASV port out of range: %d", port)
+	}
 
 	return net.DialTimeout("tcp", net.JoinHostPort(c.host, strconv.Itoa(port)), 10*time.Second)
 }
 
 func (c *Client) command(format string, args ...interface{}) (int, string, error) {
+	for _, arg := range args {
+		if s, ok := arg.(string); ok && strings.ContainsAny(s, "\r\n") {
+			return 0, "", errFTPCommandInjection
+		}
+	}
+
 	if _, err := fmt.Fprintf(c.writer, format+"\r\n", args...); err != nil {
 		return 0, "", err
 	}
@@ -304,9 +329,13 @@ func (c *Client) readResponse() (int, string, error) {
 	}
 
 	if len(line) > 3 && line[3] == '-' {
+		const maxMultiLines = 1024
 		var lines []string
 		lines = append(lines, line[4:])
 		for {
+			if len(lines) > maxMultiLines {
+				return 0, "", fmt.Errorf("ftp: multi-line response exceeds %d lines", maxMultiLines)
+			}
 			next, err := c.reader.ReadString('\n')
 			if err != nil {
 				return 0, "", err

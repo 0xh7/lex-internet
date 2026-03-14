@@ -2,6 +2,7 @@ package smtp
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -15,6 +16,8 @@ type Client struct {
 	serverName string
 	extensions map[string]string
 }
+
+var errSMTPCommandInjection = errors.New("smtp: command argument contains CR or LF")
 
 func Dial(addr string) (*Client, error) {
 	conn, err := net.Dial("tcp", addr)
@@ -145,10 +148,18 @@ func (c *Client) SendMail(from string, to []string, msg []byte) error {
 }
 
 func (c *Client) command(format string, args ...interface{}) (int, string, error) {
+	for _, arg := range args {
+		if s, ok := arg.(string); ok && strings.ContainsAny(s, "\r\n") {
+			return 0, "", errSMTPCommandInjection
+		}
+	}
+
 	cmd := fmt.Sprintf(format, args...)
-	fmt.Fprintf(c.writer, "%s\r\n", cmd)
-	if err := c.writer.Flush(); err != nil {
+	if _, err := fmt.Fprintf(c.writer, "%s\r\n", cmd); err != nil {
 		return 0, "", fmt.Errorf("smtp: write: %w", err)
+	}
+	if err := c.writer.Flush(); err != nil {
+		return 0, "", fmt.Errorf("smtp: flush: %w", err)
 	}
 	return c.readResponse()
 }

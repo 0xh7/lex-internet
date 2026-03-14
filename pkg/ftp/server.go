@@ -578,7 +578,7 @@ func (sess *session) handleMKD(arg string) {
 		sess.reply(550, "Invalid path")
 		return
 	}
-	if err := os.MkdirAll(target, 0755); err != nil {
+	if err := os.Mkdir(target, 0755); err != nil {
 		sess.reply(550, "Create directory failed")
 		return
 	}
@@ -628,10 +628,17 @@ func (sess *session) openDataConn() (net.Conn, error) {
 		}
 		conn, err := sess.passiveLn.Accept()
 		sess.closeDataListener()
-		if err == nil {
-			_ = conn.SetDeadline(time.Now().Add(5 * time.Minute))
+		if err != nil {
+			return nil, err
 		}
-		return conn, err
+		clientAddr, ok1 := sess.conn.RemoteAddr().(*net.TCPAddr)
+		dataAddr, ok2 := conn.RemoteAddr().(*net.TCPAddr)
+		if ok1 && ok2 && !dataAddr.IP.Equal(clientAddr.IP) {
+			conn.Close()
+			return nil, errors.New("ftp: PASV connection from foreign IP rejected")
+		}
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Minute))
+		return conn, nil
 	case sess.activeAddr != nil:
 		addr := sess.activeAddr
 		sess.activeAddr = nil
@@ -654,7 +661,9 @@ func (sess *session) closeDataListener() {
 
 func (sess *session) passiveIP() net.IP {
 	if addr, ok := sess.conn.LocalAddr().(*net.TCPAddr); ok && addr.IP != nil && !addr.IP.IsUnspecified() {
-		return addr.IP.To4()
+		if ip := addr.IP.To4(); ip != nil {
+			return ip
+		}
 	}
 
 	ifaces, err := net.InterfaceAddrs()
@@ -696,6 +705,17 @@ func (sess *session) resolvePath(raw string) (string, string, error) {
 	}
 	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", "", errors.New("ftp: path escapes root")
+	}
+	if resolved, err := filepath.EvalSymlinks(actual); err == nil {
+		rootReal := root
+		if rr, err := filepath.EvalSymlinks(root); err == nil {
+			rootReal = rr
+		}
+		relReal, err := filepath.Rel(rootReal, resolved)
+		if err != nil || relReal == ".." || strings.HasPrefix(relReal, ".."+string(filepath.Separator)) {
+			return "", "", errors.New("ftp: path escapes root via symlink")
+		}
+		actual = resolved
 	}
 
 	return actual, virtual, nil

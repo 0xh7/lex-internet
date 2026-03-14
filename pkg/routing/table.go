@@ -108,6 +108,9 @@ func (t *Table) Lookup(dst net.IP) (*Route, error) {
 	}
 
 	result := *best
+	result.Destination = cloneIP(best.Destination)
+	result.Gateway = cloneIP(best.Gateway)
+	result.Netmask = cloneIP(best.Netmask)
 	return &result, nil
 }
 
@@ -127,6 +130,15 @@ func (t *Table) Print() {
 		fmt.Printf("%-18s %-18s %-18s %-12s %d\n",
 			r.Destination, gw, r.Netmask, r.Interface, r.Metric)
 	}
+}
+
+func cloneIP(ip net.IP) net.IP {
+	if ip == nil {
+		return nil
+	}
+	dup := make(net.IP, len(ip))
+	copy(dup, ip)
+	return dup
 }
 
 func prefixLength(mask uint32) int {

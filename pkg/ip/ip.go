@@ -76,10 +76,13 @@ func Parse(raw []byte) (*Packet, error) {
 		copy(p.Options, raw[minHeaderLen:headerLen])
 	}
 
+	if int(p.TotalLen) < headerLen {
+		return nil, errors.New("ip: TotalLen smaller than header length")
+	}
 	if int(p.TotalLen) > headerLen && int(p.TotalLen) <= len(raw) {
 		p.Payload = make([]byte, int(p.TotalLen)-headerLen)
 		copy(p.Payload, raw[headerLen:p.TotalLen])
-	} else if len(raw) > headerLen {
+	} else if int(p.TotalLen) > len(raw) && len(raw) > headerLen {
 		p.Payload = make([]byte, len(raw)-headerLen)
 		copy(p.Payload, raw[headerLen:])
 	}

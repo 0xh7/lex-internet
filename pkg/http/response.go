@@ -87,7 +87,11 @@ func ParseResponse(reader *bufio.Reader) (*Response, error) {
 		return nil, err
 	}
 
-	body, err := readBody(reader, resp.Headers)
+	if hasBodylessStatus(resp.StatusCode) {
+		return resp, nil
+	}
+
+	body, err := readBody(reader, resp.Headers, true)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +122,7 @@ func (r *Response) Marshal() []byte {
 
 	for key, vals := range r.Headers {
 		for _, v := range vals {
-			fmt.Fprintf(&buf, "%s: %s\r\n", key, v)
+			fmt.Fprintf(&buf, "%s: %s\r\n", sanitizeHeaderValue(key), sanitizeHeaderValue(v))
 		}
 	}
 	buf.WriteString("\r\n")

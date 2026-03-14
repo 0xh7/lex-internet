@@ -27,7 +27,6 @@ func NewServerConn(raw net.Conn, cert tls.Certificate) (*Conn, error) {
 	cfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS12,
-		MaxVersion:   tls.VersionTLS12,
 	}
 
 	tlsConn := tls.Server(raw, cfg)

@@ -40,6 +40,7 @@ type Server struct {
 
 	mu       sync.Mutex
 	listener net.Listener
+	wg       sync.WaitGroup
 }
 
 type session struct {
@@ -87,18 +88,24 @@ func (s *Server) ListenAndServe() error {
 			log.Printf("smtp: accept error: %v", err)
 			continue
 		}
-		go s.handleConn(conn)
+		s.wg.Add(1)
+		go func(c net.Conn) {
+			defer s.wg.Done()
+			s.handleConn(c)
+		}(conn)
 	}
 }
 
 func (s *Server) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.listener != nil {
 		err := s.listener.Close()
 		s.listener = nil
+		s.mu.Unlock()
+		s.wg.Wait()
 		return err
 	}
+	s.mu.Unlock()
 	return nil
 }
 
@@ -365,8 +372,16 @@ func extractAddress(s string) string {
 	if s == "<>" {
 		return nullSender
 	}
-	if strings.HasPrefix(s, "<") && strings.HasSuffix(s, ">") {
-		return s[1 : len(s)-1]
+	if strings.HasPrefix(s, "<") {
+		end := strings.IndexByte(s, '>')
+		if end < 0 {
+			return ""
+		}
+		return s[1:end]
+	}
+	// Bare address without angle brackets - strip any trailing SMTP parameters.
+	if sp := strings.IndexByte(s, ' '); sp >= 0 {
+		s = s[:sp]
 	}
 	if strings.Contains(s, "@") {
 		return s

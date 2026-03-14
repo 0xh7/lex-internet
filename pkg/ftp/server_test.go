@@ -1,8 +1,11 @@
 package ftp
 
 import (
+	"io"
+	"net"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestResolvePathKeepsAbsolutePathsInsideRoot(t *testing.T) {
@@ -54,5 +57,31 @@ func TestSetAuthDisablesAnonymousByDefault(t *testing.T) {
 	s.SetAuth("user", "pass")
 	if s.anonymous {
 		t.Fatal("expected SetAuth to disable anonymous login")
+	}
+}
+
+type ftpTestConn struct {
+	local net.Addr
+}
+
+func (c ftpTestConn) Read([]byte) (int, error)         { return 0, io.EOF }
+func (c ftpTestConn) Write([]byte) (int, error)        { return 0, io.EOF }
+func (c ftpTestConn) Close() error                     { return nil }
+func (c ftpTestConn) LocalAddr() net.Addr              { return c.local }
+func (c ftpTestConn) RemoteAddr() net.Addr             { return &net.TCPAddr{} }
+func (c ftpTestConn) SetDeadline(time.Time) error      { return nil }
+func (c ftpTestConn) SetReadDeadline(time.Time) error  { return nil }
+func (c ftpTestConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestPassiveIPFallsBackWhenLocalAddrIsIPv6(t *testing.T) {
+	sess := &session{
+		conn: ftpTestConn{
+			local: &net.TCPAddr{IP: net.ParseIP("2001:db8::1"), Port: 21},
+		},
+	}
+
+	ip := sess.passiveIP()
+	if ip == nil || ip.To4() == nil {
+		t.Fatalf("passiveIP() = %v, want non-nil IPv4", ip)
 	}
 }

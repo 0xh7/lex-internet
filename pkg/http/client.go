@@ -214,7 +214,8 @@ func buildRedirect(orig *Request, location string) (*Request, error) {
 		}
 		for k, vals := range orig.Headers {
 			lower := strings.ToLower(k)
-			if lower == "content-type" || lower == "content-length" {
+			if lower == "content-type" || lower == "content-length" ||
+				lower == "authorization" || lower == "cookie" {
 				continue
 			}
 			req.Headers[k] = vals

@@ -73,8 +73,8 @@ func ParseMessage(raw []byte) (*Message, error) {
 		return nil, errors.New("dhcp: invalid magic cookie")
 	}
 
-	if raw[2] > 16 {
-		return nil, errors.New("dhcp: HLen exceeds maximum hardware address length")
+	if raw[2] == 0 || raw[2] > 16 {
+		return nil, errors.New("dhcp: HLen is invalid (must be 1-16)")
 	}
 
 	m := &Message{
@@ -147,18 +147,10 @@ func (m *Message) Marshal() []byte {
 	binary.BigEndian.PutUint16(buf[8:10], m.Secs)
 	binary.BigEndian.PutUint16(buf[10:12], m.Flags)
 
-	if m.CIAddr != nil {
-		copy(buf[12:16], m.CIAddr.To4())
-	}
-	if m.YIAddr != nil {
-		copy(buf[16:20], m.YIAddr.To4())
-	}
-	if m.SIAddr != nil {
-		copy(buf[20:24], m.SIAddr.To4())
-	}
-	if m.GIAddr != nil {
-		copy(buf[24:28], m.GIAddr.To4())
-	}
+	copyIPv4(buf[12:16], m.CIAddr)
+	copyIPv4(buf[16:20], m.YIAddr)
+	copyIPv4(buf[20:24], m.SIAddr)
+	copyIPv4(buf[24:28], m.GIAddr)
 
 	copy(buf[28:44], m.CHAddr[:])
 	copy(buf[44:108], m.SName[:])
@@ -169,13 +161,19 @@ func (m *Message) Marshal() []byte {
 	offset := minMsgLen
 	for _, o := range m.Options {
 		buf[offset] = o.Code
-		buf[offset+1] = o.Length
+		buf[offset+1] = uint8(len(o.Data))
 		copy(buf[offset+2:], o.Data)
 		offset += 2 + len(o.Data)
 	}
 	buf[offset] = OptEnd
 
 	return buf
+}
+
+func copyIPv4(dst []byte, ip net.IP) {
+	if ip4 := ip.To4(); ip4 != nil {
+		copy(dst, ip4)
+	}
 }
 
 func (m *Message) GetOption(code uint8) *Option {

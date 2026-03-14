@@ -76,19 +76,23 @@ func (e *Email) Marshal() []byte {
 	var buf bytes.Buffer
 
 	if e.MessageID != "" {
-		fmt.Fprintf(&buf, "Message-ID: %s\r\n", e.MessageID)
+		fmt.Fprintf(&buf, "Message-ID: %s\r\n", sanitizeHeader(e.MessageID))
 	}
 	if !e.Date.IsZero() {
 		fmt.Fprintf(&buf, "Date: %s\r\n", e.Date.Format(time.RFC1123Z))
 	}
 	if e.From != "" {
-		fmt.Fprintf(&buf, "From: %s\r\n", e.From)
+		fmt.Fprintf(&buf, "From: %s\r\n", sanitizeHeader(e.From))
 	}
 	if len(e.To) > 0 {
-		fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(e.To, ", "))
+		sanitized := make([]string, len(e.To))
+		for i, addr := range e.To {
+			sanitized[i] = sanitizeHeader(addr)
+		}
+		fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(sanitized, ", "))
 	}
 	if e.Subject != "" {
-		fmt.Fprintf(&buf, "Subject: %s\r\n", e.Subject)
+		fmt.Fprintf(&buf, "Subject: %s\r\n", sanitizeHeader(e.Subject))
 	}
 
 	skip := map[string]bool{
@@ -98,12 +102,16 @@ func (e *Email) Marshal() []byte {
 		if skip[k] {
 			continue
 		}
-		fmt.Fprintf(&buf, "%s: %s\r\n", k, v)
+		fmt.Fprintf(&buf, "%s: %s\r\n", sanitizeHeader(k), sanitizeHeader(v))
 	}
 
 	buf.WriteString("\r\n")
 	buf.WriteString(e.Body)
 	return buf.Bytes()
+}
+
+func sanitizeHeader(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
 }
 
 func (e *Email) AddHeader(key, value string) {

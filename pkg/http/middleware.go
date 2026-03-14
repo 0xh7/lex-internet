@@ -1,6 +1,7 @@
 package http
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -45,14 +45,20 @@ func Recovery() MiddlewareFunc {
 }
 
 func CORS(origins ...string) MiddlewareFunc {
-	allowed := "*"
-	if len(origins) > 0 {
-		allowed = strings.Join(origins, ", ")
+	allowedSet := make(map[string]bool, len(origins))
+	for _, o := range origins {
+		allowedSet[o] = true
 	}
 
 	return func(next HandlerFunc) HandlerFunc {
 		return func(req *Request, w *ResponseWriter) {
-			w.SetHeader("Access-Control-Allow-Origin", allowed)
+			origin := req.Header("Origin")
+			if len(origins) == 0 {
+				w.SetHeader("Access-Control-Allow-Origin", "*")
+			} else if allowedSet[origin] {
+				w.SetHeader("Access-Control-Allow-Origin", origin)
+				w.SetHeader("Vary", "Origin")
+			}
 			w.SetHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
 			w.SetHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 			w.SetHeader("Access-Control-Max-Age", "86400")
@@ -113,7 +119,8 @@ func RateLimit(rps int) MiddlewareFunc {
 
 func RateLimitWithStop(rps int, stop <-chan struct{}) MiddlewareFunc {
 	buckets := &sync.Map{}
-	var lastCleanup atomic.Int64
+	var lastCleanup sync.Mutex
+	lastCleanupTime := time.Now()
 
 	if stop != nil {
 		go func() {
@@ -129,17 +136,18 @@ func RateLimitWithStop(rps int, stop <-chan struct{}) MiddlewareFunc {
 				}
 			}
 		}()
-	} else {
-		lastCleanup.Store(time.Now().UnixNano())
 	}
 
 	return func(next HandlerFunc) HandlerFunc {
 		return func(req *Request, w *ResponseWriter) {
 			if stop == nil {
-				now := time.Now()
-				last := lastCleanup.Load()
-				if now.UnixNano()-last >= int64(5*time.Minute) && lastCleanup.CompareAndSwap(last, now.UnixNano()) {
+				lastCleanup.Lock()
+				if time.Since(lastCleanupTime) > 5*time.Minute {
+					lastCleanupTime = time.Now()
+					lastCleanup.Unlock()
 					cleanupBuckets(buckets)
+				} else {
+					lastCleanup.Unlock()
 				}
 			}
 
@@ -188,8 +196,7 @@ func BasicAuth(realm string, credentials map[string]string) MiddlewareFunc {
 				return
 			}
 
-			expected, exists := credentials[user]
-			if !exists || subtle.ConstantTimeCompare([]byte(expected), []byte(pass)) != 1 {
+			if !basicAuthMatch(credentials, user, pass) {
 				w.SetHeader("Www-Authenticate", fmt.Sprintf(`Basic realm="%s"`, realm))
 				w.Text(401, "Unauthorized")
 				return
@@ -198,6 +205,17 @@ func BasicAuth(realm string, credentials map[string]string) MiddlewareFunc {
 			next(req, w)
 		}
 	}
+}
+
+func basicAuthMatch(credentials map[string]string, user, pass string) bool {
+	expected, exists := credentials[user]
+
+	// Hash both sides so comparison always uses a fixed-size input.
+	expectedHash := sha256.Sum256([]byte(expected))
+	passHash := sha256.Sum256([]byte(pass))
+	match := subtle.ConstantTimeCompare(expectedHash[:], passHash[:]) == 1
+
+	return exists && match
 }
 
 func MaxBody(size int64) MiddlewareFunc {
