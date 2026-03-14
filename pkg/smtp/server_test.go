@@ -42,12 +42,19 @@ func TestDiscardDataStopsAtDotAndKeepsSessionSynced(t *testing.T) {
 		close(done)
 	}()
 
-	payload := "line1\r\n" +
-		"line2\r\n" +
-		".\r\n" +
-		"NOOP\r\n"
-	if _, err := clientConn.Write([]byte(payload)); err != nil {
-		t.Fatalf("write payload: %v", err)
+	dataWriteErr := make(chan error, 1)
+	go func() {
+		_, err := clientConn.Write([]byte("line1\r\nline2\r\n.\r\n"))
+		dataWriteErr <- err
+	}()
+
+	select {
+	case err := <-dataWriteErr:
+		if err != nil {
+			t.Fatalf("write DATA payload: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("writing DATA payload blocked")
 	}
 
 	select {
@@ -56,11 +63,26 @@ func TestDiscardDataStopsAtDotAndKeepsSessionSynced(t *testing.T) {
 		t.Fatal("discardData did not finish")
 	}
 
+	cmdWriteErr := make(chan error, 1)
+	go func() {
+		_, err := clientConn.Write([]byte("NOOP\r\n"))
+		cmdWriteErr <- err
+	}()
+
 	line, err := readLineLimited(sess.reader, maxCommandLineLen)
 	if err != nil {
 		t.Fatalf("read command after discardData: %v", err)
 	}
 	if line != "NOOP" {
 		t.Fatalf("line after DATA terminator = %q, want %q", line, "NOOP")
+	}
+
+	select {
+	case err := <-cmdWriteErr:
+		if err != nil {
+			t.Fatalf("write command payload: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("writing command payload blocked")
 	}
 }
