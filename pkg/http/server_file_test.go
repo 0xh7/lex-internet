@@ -33,9 +33,12 @@ func TestResolvePathWithinRootAllowsPathInsideRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolvePathWithinRoot inside root: %v", err)
 	}
-
-	if !pathWithinRoot(root, got) {
-		t.Fatalf("resolved path %q escaped root %q", got, root)
+	rootNorm := root
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		rootNorm = r
+	}
+	if !pathWithinRoot(rootNorm, got) {
+		t.Fatalf("resolved path %q escaped root %q", got, rootNorm)
 	}
 	if base := filepath.Base(got); base != "index.html" {
 		t.Fatalf("resolved file name = %q, want %q", base, "index.html")
@@ -59,8 +62,12 @@ func TestResolvePathWithinRootAllowsPathInsideSymlinkedRoot(t *testing.T) {
 		t.Fatalf("resolvePathWithinRoot symlinked root: %v", err)
 	}
 
-	if !pathWithinRoot(realRoot, got) {
-		t.Fatalf("resolved path %q escaped real root %q", got, realRoot)
+	realRootNorm := realRoot
+	if r, err := filepath.EvalSymlinks(realRoot); err == nil {
+		realRootNorm = r
+	}
+	if !pathWithinRoot(realRootNorm, got) {
+		t.Fatalf("resolved path %q escaped real root %q", got, realRootNorm)
 	}
 	if base := filepath.Base(got); base != "index.html" {
 		t.Fatalf("resolved file name = %q, want %q", base, "index.html")
