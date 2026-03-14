@@ -12,6 +12,9 @@ import (
 
 func TestResolvePathKeepsAbsolutePathsInsideRoot(t *testing.T) {
 	root := t.TempDir()
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
 	sess := &session{
 		server: &Server{rootDir: root},
 		cwd:    "/",
@@ -32,6 +35,9 @@ func TestResolvePathKeepsAbsolutePathsInsideRoot(t *testing.T) {
 
 func TestResolvePathUsesSessionCWD(t *testing.T) {
 	root := t.TempDir()
+	if r, err := filepath.EvalSymlinks(root); err == nil {
+		root = r
+	}
 	sess := &session{
 		server: &Server{rootDir: root},
 		cwd:    "/pub",
