@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -40,6 +41,10 @@ func TestResolvePathWithinRootAllowsPathInsideRoot(t *testing.T) {
 }
 
 func TestResolvePathWithinRootRejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink semantics/permissions vary on Windows runners; covered on Linux CI")
+	}
+
 	root := t.TempDir()
 	outsideDir := t.TempDir()
 	outsideFile := filepath.Join(outsideDir, "secret.txt")
