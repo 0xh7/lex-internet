@@ -3,6 +3,7 @@ package http
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -39,6 +40,8 @@ type ResponseWriter struct {
 	keepAlive   bool
 	writeErr    error
 }
+
+var errPathTraversal = errors.New("http: path escapes configured root")
 
 func NewServer(addr string) *Server {
 	return &Server{
@@ -298,7 +301,23 @@ func (w *ResponseWriter) HTML(code int, html string) {
 }
 
 func (w *ResponseWriter) File(path string) error {
-	cleaned := filepath.Clean(path)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	return w.FileFromRoot(cwd, path)
+}
+
+func (w *ResponseWriter) FileFromRoot(rootDir, path string) error {
+	cleaned, err := resolvePathWithinRoot(rootDir, path)
+	if err != nil {
+		if errors.Is(err, errPathTraversal) {
+			w.Text(403, "Forbidden")
+			return nil
+		}
+		return err
+	}
+
 	info, err := os.Stat(cleaned)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -309,6 +328,14 @@ func (w *ResponseWriter) File(path string) error {
 	}
 	if info.IsDir() {
 		indexPath := filepath.Join(cleaned, "index.html")
+		indexPath, err = resolvePathWithinRoot(rootDir, indexPath)
+		if err != nil {
+			if errors.Is(err, errPathTraversal) {
+				w.Text(403, "Forbidden")
+				return nil
+			}
+			return err
+		}
 		if indexInfo, err := os.Stat(indexPath); err == nil {
 			cleaned = indexPath
 			info = indexInfo
@@ -334,6 +361,58 @@ func (w *ResponseWriter) File(path string) error {
 		return fmt.Errorf("http: sending file: %w", err)
 	}
 	return nil
+}
+
+func resolvePathWithinRoot(rootDir, path string) (string, error) {
+	if rootDir == "" {
+		rootDir = "."
+	}
+	rootAbs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return "", err
+	}
+	rootReal := rootAbs
+	if resolvedRoot, err := filepath.EvalSymlinks(rootAbs); err == nil {
+		rootReal = resolvedRoot
+	}
+
+	candidate := filepath.Clean(path)
+	if !filepath.IsAbs(candidate) {
+		candidate = filepath.Join(rootAbs, candidate)
+	}
+	candidateAbs, err := filepath.Abs(candidate)
+	if err != nil {
+		return "", err
+	}
+	if !pathWithinRoot(rootAbs, candidateAbs) {
+		return "", errPathTraversal
+	}
+
+	resolvedCandidate := candidateAbs
+	if resolved, err := filepath.EvalSymlinks(candidateAbs); err == nil {
+		resolvedCandidate = resolved
+	} else if errors.Is(err, os.ErrNotExist) {
+		parent := filepath.Dir(candidateAbs)
+		if resolvedParent, perr := filepath.EvalSymlinks(parent); perr == nil {
+			resolvedCandidate = filepath.Join(resolvedParent, filepath.Base(candidateAbs))
+		}
+	}
+	if !pathWithinRoot(rootReal, resolvedCandidate) {
+		return "", errPathTraversal
+	}
+
+	return resolvedCandidate, nil
+}
+
+func pathWithinRoot(rootAbs, candidateAbs string) bool {
+	rel, err := filepath.Rel(rootAbs, candidateAbs)
+	if err != nil {
+		return false
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	return true
 }
 
 func writeError(conn net.Conn, code int, msg string) {

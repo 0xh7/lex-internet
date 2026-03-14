@@ -123,7 +123,7 @@ func probeICMP(dst net.IP, ttl int, timeout time.Duration, id, seq uint16) (time
 			continue
 		}
 
-		reply, err := icmp.Parse(buf[:n])
+		reply, err := icmp.ParsePacket(buf[:n])
 		if err != nil {
 			continue
 		}
@@ -179,7 +179,7 @@ func probeUDP(dst net.IP, ttl int, timeout time.Duration, port int) (time.Durati
 			continue
 		}
 
-		reply, err := icmp.Parse(buf[:n])
+		reply, err := icmp.ParsePacket(buf[:n])
 		if err != nil {
 			continue
 		}

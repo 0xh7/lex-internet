@@ -96,6 +96,9 @@ func (rs *RuleSet) AddRule(rule Rule) {
 func (rs *RuleSet) InsertRule(index int, rule Rule) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
+	if index < 0 {
+		index = 0
+	}
 	if index >= len(rs.rules) {
 		rs.rules = append(rs.rules, rule)
 		return

@@ -1,17 +1,34 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"math"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/0xh7/lex-internet/pkg/icmp"
 )
+
+func extractReplyTTL(raw []byte) (int, bool) {
+	if len(raw) < 20 || raw[0]>>4 != 4 {
+		return 0, false
+	}
+	ihl := int(raw[0]&0x0f) * 4
+	if ihl < 20 || ihl > len(raw) {
+		return 0, false
+	}
+	totalLen := int(binary.BigEndian.Uint16(raw[2:4]))
+	if totalLen > 0 && totalLen < ihl {
+		return 0, false
+	}
+	return int(raw[8]), true
+}
 
 func main() {
 	count := flag.Int("c", 0, "number of pings (0 = unlimited)")
@@ -90,49 +107,59 @@ func main() {
 			sent++
 			mu.Unlock()
 			sendTime := time.Now()
+			expectedSeq := uint16(seq & 0xffff)
 
 			buf := make([]byte, 1500)
-			conn.SetReadDeadline(time.Now().Add(*timeout))
-			n, from, err := conn.ReadFromIP(buf)
-			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					fmt.Printf("Request timeout for icmp_seq %d\n", seq)
-				} else {
-					fmt.Fprintf(os.Stderr, "ping: recv: %v\n", err)
+			deadline := sendTime.Add(*timeout)
+			timedOut := true
+			for {
+				conn.SetReadDeadline(deadline)
+				n, from, err := conn.ReadFromIP(buf)
+				if err != nil {
+					if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+						fmt.Printf("Request timeout for icmp_seq %d\n", seq)
+					} else {
+						fmt.Fprintf(os.Stderr, "ping: recv: %v\n", err)
+					}
+					break
 				}
-				seq++
-				time.Sleep(*interval)
-				continue
-			}
 
-			rtt := time.Since(sendTime)
-			reply, err := icmp.Parse(buf[:n])
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "ping: parse: %v\n", err)
-				seq++
-				time.Sleep(*interval)
-				continue
-			}
-
-			switch reply.Type {
-			case icmp.TypeEchoReply:
-				if reply.ID != id {
-					seq++
+				reply, err := icmp.ParsePacket(buf[:n])
+				if err != nil {
 					continue
 				}
-				mu.Lock()
-				received++
-				ms := float64(rtt.Microseconds()) / 1000.0
-				rtts = append(rtts, ms)
-				mu.Unlock()
-				fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%d time=%.3f ms\n",
-					n, from.IP, reply.Seq, *ttl, ms)
-			case icmp.TypeDestUnreachable:
-				fmt.Printf("From %s: Destination unreachable (code=%d)\n", from.IP, reply.Code)
-			case icmp.TypeTimeExceeded:
-				fmt.Printf("From %s: Time exceeded\n", from.IP)
-			default:
-				fmt.Printf("From %s: unexpected ICMP type=%d code=%d\n", from.IP, reply.Type, reply.Code)
+
+				switch reply.Type {
+				case icmp.TypeEchoReply:
+					if reply.ID != id || reply.Seq != expectedSeq {
+						continue
+					}
+					rtt := time.Since(sendTime)
+					mu.Lock()
+					received++
+					ms := float64(rtt.Microseconds()) / 1000.0
+					rtts = append(rtts, ms)
+					mu.Unlock()
+					ttlText := "?"
+					if replyTTL, ok := extractReplyTTL(buf[:n]); ok {
+						ttlText = strconv.Itoa(replyTTL)
+					}
+					fmt.Printf("%d bytes from %s: icmp_seq=%d ttl=%s time=%.3f ms\n",
+						len(reply.Data)+8, from.IP, reply.Seq, ttlText, ms)
+					timedOut = false
+				case icmp.TypeDestUnreachable:
+					fmt.Printf("From %s: Destination unreachable (code=%d)\n", from.IP, reply.Code)
+					timedOut = false
+				case icmp.TypeTimeExceeded:
+					fmt.Printf("From %s: Time exceeded\n", from.IP)
+					timedOut = false
+				default:
+					continue
+				}
+
+				if !timedOut {
+					break
+				}
 			}
 
 			seq++

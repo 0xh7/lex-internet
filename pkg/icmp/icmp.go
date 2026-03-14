@@ -25,6 +25,33 @@ type Message struct {
 	Data     []byte
 }
 
+// ParsePacket parses ICMP data from either a raw ICMP message or an IPv4
+// packet carrying ICMP payload.
+func ParsePacket(raw []byte) (*Message, error) {
+	payload := raw
+	if len(raw) >= 20 && raw[0]>>4 == 4 && (raw[0]&0x0f) >= 5 {
+		ihl := int(raw[0]&0x0f) * 4
+		if ihl > len(raw) {
+			return nil, errors.New("icmp: IPv4 header exceeds packet size")
+		}
+		if raw[9] != ip.ProtocolICMP {
+			return nil, errors.New("icmp: IPv4 payload is not ICMP")
+		}
+		totalLen := int(binary.BigEndian.Uint16(raw[2:4]))
+		if totalLen == 0 {
+			totalLen = len(raw)
+		}
+		if totalLen < ihl {
+			return nil, errors.New("icmp: invalid IPv4 total length")
+		}
+		if totalLen > len(raw) {
+			return nil, errors.New("icmp: IPv4 total length exceeds packet size")
+		}
+		payload = raw[ihl:totalLen]
+	}
+	return Parse(payload)
+}
+
 func Parse(raw []byte) (*Message, error) {
 	if len(raw) < headerLen {
 		return nil, errors.New("icmp: message too short")

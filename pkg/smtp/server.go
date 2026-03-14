@@ -262,6 +262,7 @@ func (sess *session) cmdData() {
 		if err != nil {
 			if errors.Is(err, errLineTooLong) {
 				sess.reply(552, "line too long")
+				sess.discardData()
 				sess.resetEnvelope()
 			}
 			return
@@ -276,6 +277,7 @@ func (sess *session) cmdData() {
 		remaining := sess.server.maxSize - len(data)
 		if remaining < 0 || len(wireLine) > remaining {
 			sess.reply(552, "message exceeds maximum size")
+			sess.discardData()
 			sess.resetEnvelope()
 			return
 		}
@@ -303,6 +305,22 @@ func (sess *session) cmdQuit() {
 func (sess *session) cmdRset() {
 	sess.resetEnvelope()
 	sess.reply(250, "OK")
+}
+
+func (sess *session) discardData() {
+	for {
+		sess.conn.SetReadDeadline(time.Now().Add(defaultReadTimeout))
+		line, err := readLineLimited(sess.reader, maxDataLineLen)
+		if err != nil {
+			if errors.Is(err, errLineTooLong) {
+				continue
+			}
+			return
+		}
+		if line == "." {
+			return
+		}
+	}
 }
 
 func (sess *session) resetEnvelope() {
@@ -358,16 +376,23 @@ func extractAddress(s string) string {
 
 func readLineLimited(reader *bufio.Reader, max int) (string, error) {
 	var line []byte
+	tooLong := false
 	for {
 		chunk, isPrefix, err := reader.ReadLine()
 		if err != nil {
 			return "", err
 		}
-		line = append(line, chunk...)
-		if len(line) > max {
-			return "", errLineTooLong
+		if !tooLong {
+			if len(line)+len(chunk) > max {
+				tooLong = true
+			} else {
+				line = append(line, chunk...)
+			}
 		}
 		if !isPrefix {
+			if tooLong {
+				return "", errLineTooLong
+			}
 			return string(line), nil
 		}
 	}

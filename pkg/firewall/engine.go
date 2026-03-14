@@ -20,6 +20,8 @@ type PacketInfo struct {
 type connKey struct {
 	srcIP   [16]byte
 	dstIP   [16]byte
+	srcSet  bool
+	dstSet  bool
 	srcPort uint16
 	dstPort uint16
 	proto   string
@@ -137,8 +139,14 @@ func (e *Engine) Close() {
 
 func (e *Engine) makeKey(info PacketInfo) connKey {
 	var k connKey
-	copy(k.srcIP[:], info.SrcIP.To16())
-	copy(k.dstIP[:], info.DstIP.To16())
+	if src := info.SrcIP.To16(); src != nil {
+		copy(k.srcIP[:], src)
+		k.srcSet = true
+	}
+	if dst := info.DstIP.To16(); dst != nil {
+		copy(k.dstIP[:], dst)
+		k.dstSet = true
+	}
 	k.srcPort = info.SrcPort
 	k.dstPort = info.DstPort
 	k.proto = info.Protocol
@@ -147,8 +155,14 @@ func (e *Engine) makeKey(info PacketInfo) connKey {
 
 func (e *Engine) reverseKey(info PacketInfo) connKey {
 	var k connKey
-	copy(k.srcIP[:], info.DstIP.To16())
-	copy(k.dstIP[:], info.SrcIP.To16())
+	if src := info.DstIP.To16(); src != nil {
+		copy(k.srcIP[:], src)
+		k.srcSet = true
+	}
+	if dst := info.SrcIP.To16(); dst != nil {
+		copy(k.dstIP[:], dst)
+		k.dstSet = true
+	}
 	k.srcPort = info.DstPort
 	k.dstPort = info.SrcPort
 	k.proto = info.Protocol

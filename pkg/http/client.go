@@ -32,6 +32,7 @@ type connPool struct {
 
 type poolConn struct {
 	conn    net.Conn
+	reader  *bufio.Reader
 	created time.Time
 }
 
@@ -57,7 +58,7 @@ func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
 		host = host + ":80"
 	}
 
-	conn, err := c.getConn(host)
+	conn, reader, err := c.getConn(host)
 	if err != nil {
 		return nil, fmt.Errorf("http: connect %s: %w", host, err)
 	}
@@ -82,7 +83,6 @@ func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
 		return nil, fmt.Errorf("http: write request: %w", err)
 	}
 
-	reader := bufio.NewReaderSize(conn, 4096)
 	resp, err := ParseResponse(reader)
 	if err != nil {
 		conn.Close()
@@ -90,7 +90,7 @@ func (c *Client) doFollow(req *Request, redirects int) (*Response, error) {
 	}
 
 	if shouldReuseConnection(resp, reader) {
-		c.putConn(host, conn)
+		c.putConn(host, conn, reader)
 	} else {
 		conn.Close()
 	}
@@ -148,7 +148,7 @@ func (c *Client) Delete(url string) (*Response, error) {
 	return c.Do(req)
 }
 
-func (c *Client) getConn(host string) (net.Conn, error) {
+func (c *Client) getConn(host string) (net.Conn, *bufio.Reader, error) {
 	c.pool.mu.Lock()
 	conns := c.pool.idle[host]
 	now := time.Now()
@@ -160,7 +160,10 @@ func (c *Client) getConn(host string) (net.Conn, error) {
 		if now.Sub(pc.created) < c.pool.idleTimeout {
 			c.pool.idle[host] = conns
 			c.pool.mu.Unlock()
-			return pc.conn, nil
+			if pc.reader == nil {
+				pc.reader = bufio.NewReaderSize(pc.conn, 4096)
+			}
+			return pc.conn, pc.reader, nil
 		}
 		pc.conn.Close()
 	}
@@ -168,10 +171,14 @@ func (c *Client) getConn(host string) (net.Conn, error) {
 	delete(c.pool.idle, host)
 	c.pool.mu.Unlock()
 
-	return net.DialTimeout("tcp", host, c.Timeout)
+	conn, err := net.DialTimeout("tcp", host, c.Timeout)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, bufio.NewReaderSize(conn, 4096), nil
 }
 
-func (c *Client) putConn(host string, conn net.Conn) {
+func (c *Client) putConn(host string, conn net.Conn, reader *bufio.Reader) {
 	c.pool.mu.Lock()
 	defer c.pool.mu.Unlock()
 
@@ -182,6 +189,7 @@ func (c *Client) putConn(host string, conn net.Conn) {
 	}
 	c.pool.idle[host] = append(conns, poolConn{
 		conn:    conn,
+		reader:  reader,
 		created: time.Now(),
 	})
 }

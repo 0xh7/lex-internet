@@ -275,13 +275,13 @@ func (ct *compressionTable) compressName(name string, buf []byte) []byte {
 
 	for i := range labels {
 		suffix := strings.Join(labels[i:], ".")
-		if ptr, ok := ct.offsets[suffix]; ok && ptr < 0x3fff {
+		if ptr, ok := ct.offsets[suffix]; ok && ptr <= 0x3fff {
 			p := uint16(0xc000) | uint16(ptr)
 			buf = append(buf, byte(p>>8), byte(p))
 			return buf
 		}
 		pos := len(buf)
-		if pos < 0x3fff {
+		if pos <= 0x3fff {
 			ct.offsets[suffix] = pos
 		}
 		buf = append(buf, byte(len(labels[i])))

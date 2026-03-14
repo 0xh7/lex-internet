@@ -44,3 +44,15 @@ func TestResolvePathUsesSessionCWD(t *testing.T) {
 		t.Fatalf("virtual path = %q, want %q", virtual, "/pub/etc/passwd")
 	}
 }
+
+func TestSetAuthDisablesAnonymousByDefault(t *testing.T) {
+	s := NewServer("127.0.0.1:0", t.TempDir())
+	if !s.anonymous {
+		t.Fatal("expected anonymous login to be enabled by default")
+	}
+
+	s.SetAuth("user", "pass")
+	if s.anonymous {
+		t.Fatal("expected SetAuth to disable anonymous login")
+	}
+}

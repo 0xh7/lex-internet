@@ -53,7 +53,7 @@ type Server struct {
 	password  string
 	anonymous bool
 
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	listener net.Listener
 }
 
@@ -79,11 +79,18 @@ func NewServer(addr, rootDir string) *Server {
 }
 
 func (s *Server) SetAuth(user, pass string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.username = user
 	s.password = pass
+	if user != "" {
+		s.anonymous = false
+	}
 }
 
 func (s *Server) AllowAnonymous(v bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.anonymous = v
 }
 
@@ -106,9 +113,9 @@ func (s *Server) ListenAndServe() error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			s.mu.Lock()
+			s.mu.RLock()
 			closed := s.listener == nil
-			s.mu.Unlock()
+			s.mu.RUnlock()
 			if closed {
 				return nil
 			}
@@ -128,6 +135,12 @@ func (s *Server) Close() error {
 	err := s.listener.Close()
 	s.listener = nil
 	return err
+}
+
+func (s *Server) authSnapshot() (username, password string, anonymous bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.username, s.password, s.anonymous
 }
 
 func (s *Server) handleConn(conn net.Conn) {
@@ -263,12 +276,13 @@ func (sess *session) handleUSER(arg string) {
 	sess.user = arg
 	sess.authenticated = false
 
-	if sess.server.anonymous && strings.EqualFold(arg, "anonymous") {
+	username, _, anonymous := sess.server.authSnapshot()
+	if anonymous && strings.EqualFold(arg, "anonymous") {
 		sess.reply(331, "Anonymous login ok, send any password")
 		return
 	}
 
-	if sess.server.username == "" {
+	if username == "" {
 		sess.authenticated = true
 		sess.reply(230, "Login successful")
 		return
@@ -278,16 +292,17 @@ func (sess *session) handleUSER(arg string) {
 }
 
 func (sess *session) handlePASS(arg string) {
+	username, password, anonymous := sess.server.authSnapshot()
 	switch {
 	case sess.user == "":
 		sess.reply(503, "Login with USER first")
-	case sess.server.anonymous && strings.EqualFold(sess.user, "anonymous"):
+	case anonymous && strings.EqualFold(sess.user, "anonymous"):
 		sess.authenticated = true
 		sess.reply(230, "Anonymous login successful")
-	case sess.server.username == "":
+	case username == "":
 		sess.authenticated = true
 		sess.reply(230, "Login successful")
-	case secureEqualString(sess.user, sess.server.username) && secureEqualString(arg, sess.server.password):
+	case secureEqualString(sess.user, username) && secureEqualString(arg, password):
 		sess.authenticated = true
 		sess.reply(230, "Login successful")
 	default:

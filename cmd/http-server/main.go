@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 
@@ -188,13 +187,7 @@ func main() {
 
 	srv.GET("/static/*", func(req *http.Request, w *http.ResponseWriter) {
 		rel := req.Param("*")
-		path := filepath.Join(staticDir, filepath.FromSlash(rel))
-		path = filepath.Clean(path)
-		if !strings.HasPrefix(path, staticDir+string(filepath.Separator)) && path != staticDir {
-			w.Text(403, "Forbidden")
-			return
-		}
-		if err := w.File(path); err != nil {
+		if err := w.FileFromRoot(staticDir, filepath.FromSlash(rel)); err != nil {
 			log.Printf("static file error: %v", err)
 			w.Text(500, "Internal Server Error")
 		}
